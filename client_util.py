@@ -35,7 +35,6 @@ class LQCDMCPClient:
         self.jlab_run = False
         # Check whether we running inside jlab
         run_env = os.getenv("MCP_RUN_ENV", "global").lower()
-        print("runenv = {}".format(run_env))
         if run_env == "jlab":
             self.jlab_run = True
 
