@@ -9,7 +9,7 @@ import logging
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
-from common_util import MCPClientManager
+from client_util import LQCDMCPClient
 from common_data import FullSystemResource
 from common_data import SlurmMcpServer
 
@@ -72,7 +72,7 @@ async def show_computing_resources(proxy_client: Client) -> FullSystemResource:
 
 
 # Call all proxy server tools for testing
-async def call_all_proxy_tools(client_manager: MCPClientManager) -> str:
+async def call_all_proxy_tools(client_manager: LQCDMCPClient) -> str:
     """call all proxy server tools for testing."""
     proxy_client = await client_manager.get_proxy_client()
 
@@ -115,7 +115,9 @@ async def call_all_proxy_tools(client_manager: MCPClientManager) -> str:
 
 
 # Test a job submisstion without LLM
-async def submit_job_test(client_manager: MCPClientManager, filename: str) -> str:
+async def submit_job_test(
+    client_manager: LQCDMCPClient, mcp_name: str, filename: str
+) -> str:
     """Submit a job to the server without LLM."""
     proxy_client = await client_manager.get_proxy_client()
 
@@ -135,7 +137,7 @@ async def submit_job_test(client_manager: MCPClientManager, filename: str) -> st
 
 
 # Talk to an LLM and the proxy
-async def get_tool_calls_from_llm(client_manager: MCPClientManager, request: str):
+async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
     """Get tools from proxy and talk to an LLM to decide what to do next."""
     messages = [{"role": "user", "content": request}]
 
@@ -186,7 +188,7 @@ async def get_tool_calls_from_llm(client_manager: MCPClientManager, request: str
 
 # Handll proxy tool calls according to LLM response
 async def handle_tool_calls(
-    client_manager: MCPClientManager,
+    client_manager: LQCDMCPClient,
     llm_response,
     messages,
 ) -> str:
@@ -241,7 +243,7 @@ async def handle_tool_calls(
 
 
 # Talk to an LLM and the proxy to launch and connect to a backend MCP server
-async def proxy_llm_loop(client_manager: MCPClientManager):
+async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
     """Talk to an LLM and the proxy to launch and connect to a backend MCP server."""
     while True:
         print("Enter your request to the proxy LLM (type 'exit' to quit):")
@@ -254,7 +256,9 @@ async def proxy_llm_loop(client_manager: MCPClientManager):
                 "Submitting a job test, Enter a local filename as job script..."
             )
             filename = input()
-            final_response_text = await submit_job_test(client_manager, filename)
+            final_response_text = await submit_job_test(
+                client_manager, mcp_name, filename
+            )
             lqcd_logger.debug(
                 "Final response from LLM and tools:\n{}".format(final_response_text)
             )
@@ -276,7 +280,7 @@ async def proxy_llm_loop(client_manager: MCPClientManager):
 
 
 # Talk to proxy server first
-async def interact_with_proxy(client_manager: MCPClientManager):
+async def interact_with_proxy(client_manager: LQCDMCPClient, mcp_name: str):
     """
     Talk to proxy server and get some information and
     launch and connect to a backend mcp server.
@@ -300,7 +304,7 @@ async def interact_with_proxy(client_manager: MCPClientManager):
     print("How can I help you to deploy your MCP server on Jlab LQCD system?")
 
     # talk to the proxy server and an LLM to decide what to do next
-    await proxy_llm_loop(client_manager)
+    await proxy_llm_loop(client_manager, mcp_name)
 
 
 # Load env variables from .env file if present
@@ -325,7 +329,7 @@ async def main():
 
     lqcd_logger.info(f"Proxy MCP URL: {proxy_mcp_url}")
 
-    client_manager = MCPClientManager(args.proxy_url, args.mcp_name)
+    client_manager = LQCDMCPClient(args.proxy_url)
 
     if client_manager.do_debug():
         lqcd_logger.info("Debug mode enabled.")
@@ -337,7 +341,7 @@ async def main():
     lqcd_logger.info(f"Connected to Proxy at: {proxy_mcp_url}")
 
     # Talk to the proxy server and decide what to do next
-    await interact_with_proxy(client_manager)
+    await interact_with_proxy(client_manager, args.mcp_name)
     await client_manager.close()
 
 
