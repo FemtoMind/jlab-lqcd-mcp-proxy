@@ -1,0 +1,1 @@
+First implementation of fastmcp/fastapi based proxy server to launch and manage mcp servers on slurm cluster. The lunached mcp servers are running as slurm jobs and communicate with the proxy server via http. FastMCP clients communicate with backend servers through the proxy server which forwards the requests to the backend servers. 
