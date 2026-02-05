@@ -5,7 +5,7 @@ import logging
 class AnsiColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord):
         no_style = "\033[0m"
-        bold = "\033[91m"
+        bold = "\033[1m"
         grey = "\033[90m"
         yellow = "\033[93m"
         green = "\033[32m"
@@ -19,8 +19,12 @@ class AnsiColorFormatter(logging.Formatter):
             "ERROR": red,
             "CRITICAL": red_light + bold,
         }.get(record.levelname, no_style)
+        msg_style = {
+            "DEBUG": bold,
+        }.get(record.levelname, no_style)
         end_style = no_style
         record.levelname = f"{start_style}{record.levelname}{end_style}"
+        record.msg = f"{msg_style}{record.msg}{end_style}"
         return f"{super().format(record)}"
 
 
