@@ -53,7 +53,7 @@ async def main():
 
     client_manager = LQCDMCPClient(args.proxy_url)
 
-    if client_manager.do_debug():
+    if await client_manager.do_debug():
         lqcd_logger.info("Debug mode enabled.")
         lqcd_logger.setLevel(logging.DEBUG)
 
