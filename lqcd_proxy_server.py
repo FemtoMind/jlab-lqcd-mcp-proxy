@@ -264,7 +264,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     # target_url = f"{backend_url}/{path}" if path else backend_url
     target_url = f"{backend_url}"
 
-    lqcd_logger.info(f"Forwarding {request.method} request to {mcp_name} {target_url}")
+    lqcd_logger.debug(f"Forwarding {request.method} request to {mcp_name} {target_url}")
 
     # Extract context to pass to the backend (e.g., from Proxy Auth)
     # This will be used to inject user information into the MCP protocol  ***
