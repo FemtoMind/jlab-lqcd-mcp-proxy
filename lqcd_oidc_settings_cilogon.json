@@ -1,0 +1,10 @@
+{
+  "device_authorization_url": "https://cilogon.org/oauth2/device_authorization",
+  "token_url": "https://cilogon.org/oauth2/token",
+  "token_verify_url": "https://cilogon.org/oauth2/userinfo",
+  "client_id": "cilogon:/client_id/f8eac377f80ffd0f8136dcfdb58719f",
+  "client_secret": "MPFQN5sDgn7hEen9yXa82dbjt3jUsqpEEIpbO35W3ZwVIOK4tCP6Q8WmYS7JtfKGQ28mETIqOyBdFmHgNIy3Fw",
+  "scope": "openid email profile org.cilogon.userinfo",
+  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+  "provider": "cilogon"
+}

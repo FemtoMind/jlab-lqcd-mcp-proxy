@@ -1,0 +1,10 @@
+{
+  "device_authorization_url": "https://github.com/login/device/code",
+  "token_url": "https://github.com/login/oauth/access_token",
+  "token_verify_url": "https://api.github.com/user",
+  "client_id": "Ov23liVTUUwGj1Fh0dRP",
+  "client_secret": "ce3211d65989b8c5824d1df1f9dac8bcd00f9b4e",
+  "scope": "read:user",
+  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+  "provider": "github"
+}
