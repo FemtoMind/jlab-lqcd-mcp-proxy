@@ -16,7 +16,6 @@ from common_data import FullSystemResource
 from common_data import UserComputingAccounts
 from lqcd_logger import lqcd_logger
 
-
 # LQCD MCP client class
 # This class manages both proxy and backend clients
 # It also handles the connection to the proxy and backend servers and closing them
@@ -50,7 +49,7 @@ class LQCDMCPClient:
             lqcd_logger.info("MCP Application is running inside Jlab.")
             self.openai = OpenAI(
                 base_url="https://llm-vm1.jlab.org/api/v1/",
-                api_key=os.getenv("LLM_KEY"),
+                api_key=os.getenv("JLAB_LLM_KEY"),
             )
 
         # Set LLM model
@@ -124,16 +123,8 @@ class LQCDMCPClient:
 
         # check token
         if access_token is None:
-            lqcd_logger.warning("Failed to obtain access token from OIDC provider.")
-            # If this isjust test, connect without token
-            no_auth_test = os.getenv("LQCD_MCP_NO_AUTH_TEST", "false").lower()
-            if no_auth_test == "true" or no_auth_test == "yes":
-                keep_going = input("Continue to connect to proxy without authentication? (y/n): ")
-                if keep_going.lower() != "y":
-                    raise Exception("Failed to authenticate to OIDC provider.")
-                client_args = {"url": self.proxy_url}
-            else:
-                raise Exception("Failed to authenticate to OIDC provider.")
+            lqcd_logger.error("Failed to obtain access token from OIDC provider.")
+            raise Exception("Failed to authenticate to OIDC provider.")
         else:
             client_args = {
                 "url": self.proxy_mcp_url,
