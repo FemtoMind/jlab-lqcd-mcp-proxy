@@ -39,9 +39,9 @@ from lqcd_oidc_auth import validate_authorized_token
 from lqcd_oidc_auth import get_local_account
 
 # load .env file
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=True)
 
-lqcd_logger.info("Loading .env file...")
+lqcd_logger.info("Loading .server_env file...")
 # Check whether we are running inside jlab network
 _jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
 
@@ -50,7 +50,7 @@ if _jlab_slurm:
 else:
     lqcd_logger.info("Our servers use local test slurm system.")
 
-lqcd_logger.info("Loading .env file... done.")
+lqcd_logger.info("Loading .server_env file... done.")
 
 
 # A class manage slurm backend servers
