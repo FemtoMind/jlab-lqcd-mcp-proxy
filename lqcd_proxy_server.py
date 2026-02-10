@@ -9,6 +9,8 @@ import argparse
 import asyncio
 import time
 import json
+import os
+import sys
 from fastapi.security import HTTPBearer
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -272,6 +274,9 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     user_context = {"user_id": f"id_{mcp_name}", "authenticated_by": "FastAPI-Proxy"}
 
     # Handle JSON-RPC Body Injection
+    # Make sure to remove host and content-length headers,
+    # as the backend server expects the hostname of its own not the proxy's.
+
     method = request.method
     headers = dict(request.headers)
     headers.pop("host", None)
@@ -331,6 +336,27 @@ if __name__ == "__main__":
     # but for local testing you can use uvicorn directly on the 'app' object
     asyncio.run(setup_mcp_servers())
 
+    # check whether we are running https
+    _use_https = os.getenv("USE_HTTPS", "false").lower() == "true"
+
     # Run
     # need to specify 0.0.0.0 as host to allow connections from anywhere
-    uvicorn.run(proxy_app, host="0.0.0.0", port=args.port)
+    if _use_https:
+        print("Running with HTTPS")
+        ssl_keyfile = os.getenv("PROXY_KEY_FILE")
+        ssl_certfile = os.getenv("PROXY_CERT_FILE")
+        if not ssl_keyfile or not ssl_certfile:
+            lqcd_logger.error(
+                "PROXY_KEY_FILE and PROXY_CERT_FILE must be set when USE_HTTPS is true"
+            )
+            sys.exit(1)
+        uvicorn.run(
+            proxy_app,
+            host="0.0.0.0",
+            port=args.port,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+        )
+    else:
+        print("Running without HTTPS")
+        uvicorn.run(proxy_app, host="0.0.0.0", port=args.port)
