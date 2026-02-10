@@ -4,6 +4,7 @@
 # and then it could talk to a LLM to drive a workflow.
 import asyncio
 import argparse
+import os
 import json
 import logging
 from urllib import request, response
@@ -29,8 +30,8 @@ async def show_computing_resources(proxy_client: Client) -> FullSystemResource:
     return system_info
 
 
-# Load env variables from .env file if present
-load_dotenv()
+# Load env variables from .client_env file if present
+load_dotenv(os.path.join(os.path.dirname(__file__), ".client_env"), override=True)
 
 
 async def main():
