@@ -1,0 +1,12 @@
+# OpenRouter API Key used as OpenAI API Key
+OPENROUTER_API_KEY=
+OPENROUTER_API_KEY_JLAB=
+# LLM Model
+LLM_MODEL=google/gemini-2.5-flash
+# MCP Run Environment
+#MCP_RUN_ENV=JLAB
+MCP_RUN_ENV=global
+# JLab LLM Key
+JLAB_LLM_KEY=
+JLAB_LLM_MODEL=openai/gpt-oss-120b
+DEBUG=false
