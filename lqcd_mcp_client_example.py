@@ -72,11 +72,11 @@ async def main():
         lqcd_logger.info(f"Backend MCP server {args.mcp_name} does not exist.")
         lqcd_logger.info("Deploying backend MCP server...")
 
-        print("Enter a remote file name for job script...")
+        print("Enter a local file name for job script...")
         user_input = input()
-        lqcd_logger.info(f"Using remote file name: {user_input}")
+        lqcd_logger.info(f"Using local file name: {user_input}")
         mcp_server = await client_manager.launch_backend_mcp_server(
-            args.mcp_name, user_input, False, False
+            args.mcp_name, user_input, True, False
         )
 
         if mcp_server.slurm_job_id == -1:
@@ -103,13 +103,13 @@ async def main():
 
     lqcd_logger.info("\n--- Connected to BOTH servers! ---")
 
-    # 4. Interact with Proxy
+    # Interact with Proxy
     lqcd_logger.info("\n[Proxy] Listing tools:")
     proxy_tools = await proxy_client.list_tools()
     for t in proxy_tools:
         lqcd_logger.info(f"  - {t.name}")
 
-    # 5. Interact with Backend
+    # Interact with Backend
     lqcd_logger.info("\n[Backend] Listing tools:")
 
     backend_tools = await backend_client.list_tools()
