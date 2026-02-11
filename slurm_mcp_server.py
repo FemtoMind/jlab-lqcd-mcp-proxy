@@ -17,7 +17,7 @@ import asyncio
 import os
 import uvicorn
 import pwd
-import uuid
+import logging
 
 # load .env
 from dotenv import load_dotenv
@@ -45,11 +45,18 @@ lqcd_logger.info("Loading .server_env file...")
 # Check whether we are running inside jlab network
 _jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
 
+# check debug mode
+_debug = os.getenv("DEBUG", "false").lower() == "true"
+
 if _jlab_slurm:
     lqcd_logger.info("Our servers use Jlab slurm system.")
 else:
     lqcd_logger.info("Our servers use local test slurm system.")
 
+if _debug:
+    lqcd_logger.setLevel(logging.DEBUG)
+else:
+    lqcd_logger.setLevel(logging.INFO)
 lqcd_logger.info("Loading .server_env file... done.")
 
 
@@ -495,7 +502,7 @@ $cmd
 
     # Submit a slurm job
     async def submit_slurm_job(
-        self, user: str, gid: int, job_script: str
+        self, user: str, gid: int, mcp_name: str, job_script: str
     ) -> str | None:
         """Submit a slurm job."""
         # check whether this process is running as root or not
@@ -534,11 +541,11 @@ $cmd
             return None
 
         lqcd_logger.info("User {} and gid {} submitting slurm job".format(user, gid))
-        # submit job
+        # submit job using --job-name to override the job name in the script
         try:
             pipe = subprocess.Popen(
-                # ["sudo", "sbatch", "--uid", user, "--gid", str(gid)],
-                ["sudo", "-u", user, "sbatch"],
+                # ["sudo", "sbatch", "--uid", user, "--gid", str(gid), "--job-name", mcp_name],
+                ["sudo", "-u", user, "sbatch", "--job-name", mcp_name],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -669,9 +676,10 @@ async def validate_user(username: str, ctx: ServerContext):
 )
 async def get_backend_url(mcp_name: str) -> cdata.SlurmMcpServer:
     """Get the proxied URL of a backend server by its ID."""
-    lqcd_logger.debug(
-        "backend servers ={}".format(lqcd_mcp_servers.get_slurm_mcp_server_names())
-    )
+    if _debug:
+        all_servers: list[str] = await lqcd_mcp_servers.get_slurm_mcp_server_names()
+        lqcd_logger.debug("backend servers ={}".format(all_servers))
+
     server: cdata.SlurmMcpServer = await lqcd_mcp_servers.get_slurm_mcp_server(mcp_name)
     if server is not None:
         # Return the path on the proxy server that routes to this backend
@@ -967,6 +975,7 @@ async def number_of_idle_nodes(ctx: ServerContext) -> int:
 # Submit an mcp server as a slurm job with a given slurm script
 async def submit_mcp_server_as_slurm_job(
     user: str,
+    mcp_name: str,
     submission_script: str,
     backend_mcp_server: cdata.SlurmMcpServer,
     ctx: ServerContext,
@@ -975,7 +984,9 @@ async def submit_mcp_server_as_slurm_job(
 
     # submit job using the script
     gid = pwd.getpwnam(user).pw_gid  # get the group id of the user
-    jobid = await lqcd_slurm_manager.submit_slurm_job(user, gid, submission_script)
+    jobid = await lqcd_slurm_manager.submit_slurm_job(
+        user, gid, mcp_name, submission_script
+    )
     if jobid is None:
         lqcd_logger.error("Failed to submit a slurm job.")
         ctx.error("Failed to submit a slurm job.")
@@ -1215,7 +1226,7 @@ async def epilogue_mcp_slurm_server(
     tags={"slurm", "Jlab"},
 )
 async def launch_mcp_server(
-    wait: bool, mcp_name: str, ctx: ServerContext
+    mcp_name: str, wait: bool, ctx: ServerContext
 ) -> cdata.SlurmMcpServer:
     "User launch a mcp server on slurm or cloud."
 
@@ -1241,7 +1252,7 @@ async def launch_mcp_server(
     tags={"slurm", "Jlab"},
 )
 async def launch_mcp_server_on_slurm_with_script(
-    wait: bool, submission_script: str, ctx: ServerContext
+    mcp_name: str, wait: bool, submission_script: str, ctx: ServerContext
 ) -> cdata.SlurmMcpServer:
     """User launch a mcp server on slurm using a complete slurm submission script."""
     # empty backend mcp server
@@ -1278,7 +1289,7 @@ async def launch_mcp_server_on_slurm_with_script(
     )
     # submit the job
     submitted_mcp_server = await submit_mcp_server_as_slurm_job(
-        user, submission_script, backend_mcp_server, ctx
+        user, mcp_name, submission_script, backend_mcp_server, ctx
     )
 
     lqcd_logger.debug(
@@ -1289,7 +1300,24 @@ async def launch_mcp_server_on_slurm_with_script(
         )
     )
 
-    mcp_name = submitted_mcp_server.mcp_name
+    if mcp_name != submitted_mcp_server.mcp_name:
+        lqcd_logger.warning(
+            "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
+                user,
+                submitted_mcp_server.slurm_job_id,
+                submitted_mcp_server.slurm_job_name,
+                mcp_name,
+            )
+        )
+        ctx.warning(
+            "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
+                user,
+                submitted_mcp_server.slurm_job_id,
+                submitted_mcp_server.slurm_job_name,
+                mcp_name,
+            )
+        )
+        mcp_name = submitted_mcp_server.mcp_name
 
     # post process
     mcp_server = await epilogue_mcp_slurm_server(
@@ -1311,7 +1339,7 @@ async def launch_mcp_server_on_slurm_with_script(
     tags={"slurm", "Jlab"},
 )
 async def launch_mcp_server_on_slurm_with_script_file(
-    wait: bool, script_file: str, ctx: ServerContext
+    mcp_name: str, wait: bool, script_file: str, ctx: ServerContext
 ) -> cdata.SlurmMcpServer:
     """User launch a mcp server on slurm using a complete slurm submission file."""
 
@@ -1370,10 +1398,27 @@ async def launch_mcp_server_on_slurm_with_script_file(
     )
     # submit the job
     submitted_mcp_server = await submit_mcp_server_as_slurm_job(
-        user, submission_script, backend_mcp_server, ctx
+        user, mcp_name, submission_script, backend_mcp_server, ctx
     )
 
-    mcp_name = submitted_mcp_server.mcp_name
+    if mcp_name != submitted_mcp_server.mcp_name:
+        lqcd_logger.warning(
+            "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
+                user,
+                submitted_mcp_server.slurm_job_id,
+                submitted_mcp_server.slurm_job_name,
+                mcp_name,
+            )
+        )
+        ctx.warning(
+            "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
+                user,
+                submitted_mcp_server.slurm_job_id,
+                submitted_mcp_server.slurm_job_name,
+                mcp_name,
+            )
+        )
+        mcp_name = submitted_mcp_server.mcp_name
 
     # post process
     mcp_server = await epilogue_mcp_slurm_server(
