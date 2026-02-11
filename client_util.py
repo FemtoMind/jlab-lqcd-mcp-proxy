@@ -315,10 +315,10 @@ class LQCDMCPClient:
                 submission_script = f.read() 
 
             tool_name = "launch_mcp_server_on_slurm_with_script"
-            tool_args = {"wait": wait, "submission_script": submission_script}
+            tool_args = {"mcp_name": mcp_name, "wait": wait, "submission_script": submission_script}
         else:
             tool_name = "launch_mcp_server_on_slurm_with_script_file"
-            tool_args = {"wait": wait, "script_file": filename}
+            tool_args = {"mcp_name": mcp_name, "wait": wait, "script_file": filename}
         
         result = await self.proxy_client.call_tool(tool_name, tool_args)
         mcp_server: SlurmMcpServer = result.data
