@@ -1,5 +1,6 @@
 # Customized logger setup for lqcd analysis server
 import logging
+import sys
 
 
 class AnsiColorFormatter(logging.Formatter):
@@ -28,21 +29,33 @@ class AnsiColorFormatter(logging.Formatter):
         return f"{super().format(record)}"
 
 
+class SimpleFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord):
+        return f"{super().format(record)}"
+
+
 # Create a custom logger
 lqcd_logger = logging.getLogger("lqcd")
 
 # Get a stream handler
-stream_handler = logging.StreamHandler()
+stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setLevel(logging.DEBUG)
 
 # Create a formatter and set it for the handler
 # separator style formatting
 sep = ":"
-formatter = AnsiColorFormatter(
+fancy_formatter = AnsiColorFormatter(
+    f"{{levelname}}{sep:<5s} {{name:<10s}}| {{message}}", style="{"
+)
+simple_formatter = SimpleFormatter(
     f"{{levelname}}{sep:<5s} {{name:<10s}}| {{message}}", style="{"
 )
 
-stream_handler.setFormatter(formatter)
+if stream_handler.stream.isatty():
+    stream_handler.setFormatter(fancy_formatter)
+else:
+    stream_handler.setFormatter(simple_formatter)
+
 lqcd_logger.addHandler(stream_handler)
 
 # Set the logger level
