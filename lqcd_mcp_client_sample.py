@@ -307,8 +307,8 @@ async def interact_with_proxy(client_manager: LQCDMCPClient, mcp_name: str):
     await proxy_llm_loop(client_manager, mcp_name)
 
 
-# Load env variables from .env file if present
-load_dotenv()
+# Load env variables from .client_env file if present
+load_dotenv(os.path.join(os.path.dirname(__file__), ".client_env"), override=True)
 
 
 async def main():
