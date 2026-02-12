@@ -10,9 +10,9 @@ import logging
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from client_util import LQCDMCPClient
 from common_data import FullSystemResource
-from common_data import SlurmMcpServer
 
 from lqcd_logger import lqcd_logger
 
@@ -125,8 +125,18 @@ async def main():
         async with backend_client as cl:
             tool_name = "generate_random_number"
             tool_args = {}
-            result = await cl.call_tool(tool_name, tool_args)
-            lqcd_logger.info(f"Tool result: {result}")
+            try:
+                result = await cl.call_tool(tool_name, tool_args, timeout=10)
+                lqcd_logger.info(f"Tool result: {result}")
+            except ToolError as e:
+                lqcd_logger.error(f"Tool error: {e}")
+                break
+            except RuntimeError as e:
+                lqcd_logger.error(f"Runtime error: {e}")
+                break
+            except Exception as e:
+                lqcd_logger.error(f"Unexpected error: {e}")
+                break
 
     lqcd_logger.info("\nExiting and closing all connections...")
     await client_manager.close()
