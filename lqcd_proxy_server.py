@@ -193,15 +193,16 @@ def get_session_id_from_request(request: Request) -> str | None:
 @proxy_app.middleware("http")
 async def request_middleware(request: Request, call_next):
     start_time = time.time()
-    # Log request details
     """
-    lqcd_logger.info(
+    # Log request details
+    lqcd_logger.debug(
         f"-> Request: {request.method} {request.url.path} from {request.client.host}"
     )
 
     json_body = await request.json()
-    print("request json = {}".format(json_body))
+    lqcd_logger.debug("request json = {}".format(json_body))
     """
+
     # Need to check the above three things to find out whether there is session id
     if request.method == "DELETE":
         # Log request details
@@ -244,6 +245,12 @@ async def request_middleware(request: Request, call_next):
     return response
 
 
+# generate a error reporting stream used to construct StreamingResponse
+async def _proxy_error_stream(error: str, message: str):
+    """Generate a stream of error messages."""
+    yield json.dumps({"error": error, "message": message})
+
+
 # Routing to backend servers.
 # DYNAMIC ROUTING & INJECTION LOGIC
 @proxy_app.api_route("/cloud/{mcp_name}/{path:path}", methods=["GET", "POST", "DELETE"])
@@ -252,6 +259,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     Catch-all route to forward requests to a specific backend
     while injecting user information into the MCP protocol.
     """
+
     from starlette.background import BackgroundTask
     from fastapi.responses import StreamingResponse
 
@@ -259,7 +267,12 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     lqcd_logger.debug(f"Resolving backend endpoint for {mcp_name}")
     backend_server: SlurmMcpServer = await get_cloud_server(mcp_name)
     if not backend_server:
-        raise HTTPException(status_code=404, detail=f"Backend '{mcp_name}' not found")
+        lqcd_logger.error(f"Backend '{mcp_name}' not found")
+        return StreamingResponse(
+            _proxy_error_stream("Backend not found", "Backend not found"),
+            status_code=404,
+            headers={"Content-Type": "application/json"},
+        )
 
     # The full URL for the backend
     backend_url = backend_server.url
@@ -276,14 +289,12 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     # Handle JSON-RPC Body Injection
     # Make sure to remove host and content-length headers,
     # as the backend server expects the hostname of its own not the proxy's.
-
     method = request.method
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("content-length", None)
 
     forward_content = await request.body()
-
     if method == "POST":
         try:
             body = await request.json()
@@ -293,6 +304,11 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             forward_content = json.dumps(body).encode("utf-8")
         except json.JSONDecodeError:
             pass
+
+    # keep tracking error and message and status
+    error = None
+    message = None
+    status = 200
 
     # Forward the request with Streaming
     client = httpx.AsyncClient()
@@ -306,12 +322,50 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             timeout=30.0,
         )
         rp_resp = await client.send(rp_req, stream=True)
+    except httpx.ConnectError as e:
+        await client.aclose()
+        lqcd_logger.error(f"Connection error to backend {mcp_name}: {e}")
+        error = "Connection error"
+        message = f"Backend server {mcp_name} unavailable"
+        status = 503
+    except httpx.TimeoutException as e:
+        await client.aclose()
+        lqcd_logger.error(f"Timeout error to backend {mcp_name}: {e}")
+        error = "Timeout error"
+        message = f"Backend server {mcp_name} timeout"
+        status = 504
     except Exception as e:
         await client.aclose()
-        raise e
+        lqcd_logger.error(f"Error forwarding request to backend {mcp_name}: {e}")
+        error = "Proxy error"
+        message = f"Proxy error: {str(e)}"
+        status = 500
+
+    if status != 200:
+        return StreamingResponse(
+            _proxy_error_stream(error, message),
+            status_code=status,
+            headers={"Content-Type": "application/json"},
+        )
+
+    # generate a response stream used to construct StreamingResponse
+    # This is used to check whether the stream from proxy to the backend is broken
+    async def _proxy_response_stream(rp_resp: httpx.Response, mcp_name: str):
+        try:
+            async for chunk in rp_resp.aiter_bytes():
+                yield chunk
+        except httpx.RemoteProtocolError as e:
+            lqcd_logger.error(f"Backend {mcp_name} connection dropped/incomplete: {e}")
+            # remove this mcp server from the cloud server list
+            await delete_cloud_server(mcp_name)
+            lqcd_logger.info(f"Backend {mcp_name} removed from cloud server list")
+        except Exception as e:
+            lqcd_logger.error(f"Backend {mcp_name} streaming error: {e}")
+            # We cannot change the status code here as the headers are already sent.
+            # But the client will see an incomplete stream.
 
     return StreamingResponse(
-        rp_resp.aiter_bytes(),
+        _proxy_response_stream(rp_resp, mcp_name),
         status_code=rp_resp.status_code,
         headers=dict(rp_resp.headers),
         background=BackgroundTask(client.aclose),
@@ -342,7 +396,13 @@ if __name__ == "__main__":
     # Run
     # need to specify 0.0.0.0 as host to allow connections from anywhere
     if _use_https:
-        print("Running with HTTPS")
+        lqcd_logger.info("Running with HTTPS")
+
+        # redirect everything to HTTPS
+        from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+        proxy_app.add_middleware(HTTPSRedirectMiddleware)
+
         ssl_keyfile = os.getenv("PROXY_KEY_FILE")
         ssl_certfile = os.getenv("PROXY_CERT_FILE")
         if not ssl_keyfile or not ssl_certfile:
@@ -358,5 +418,5 @@ if __name__ == "__main__":
             ssl_certfile=ssl_certfile,
         )
     else:
-        print("Running without HTTPS")
+        lqcd_logger.info("Running without HTTPS")
         uvicorn.run(proxy_app, host="0.0.0.0", port=args.port)
