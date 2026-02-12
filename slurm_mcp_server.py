@@ -144,11 +144,10 @@ class SlurmMcpServers:
         """Remove a slurm backend server."""
         async with self._lock:
             if mcp_name in self.slurm_mcp_servers:
+                jobid = self.slurm_mcp_servers[mcp_name].slurm_job_id
                 del self.slurm_mcp_servers[mcp_name]
                 # remove the slurm mcp server by job id
-                del self.slurm_mcp_servers_by_jobid[
-                    self.slurm_mcp_servers[mcp_name].slurm_job_id
-                ]
+                del self.slurm_mcp_servers_by_jobid[jobid]
             return True
         return False
 
@@ -156,11 +155,10 @@ class SlurmMcpServers:
         """Remove a slurm backend server by job id."""
         async with self._lock:
             if jobid in self.slurm_mcp_servers_by_jobid:
+                mcp_name = self.slurm_mcp_servers_by_jobid[jobid].mcp_name
                 del self.slurm_mcp_servers_by_jobid[jobid]
                 # remove the slurm mcp server by server id
-                del self.slurm_mcp_servers[
-                    self.slurm_mcp_servers_by_jobid[jobid].mcp_name
-                ]
+                del self.slurm_mcp_servers[mcp_name]
             return True
         return False
 
