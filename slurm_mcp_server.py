@@ -679,9 +679,25 @@ async def get_backend_url(mcp_name: str) -> cdata.SlurmMcpServer:
         lqcd_logger.debug("backend servers ={}".format(all_servers))
 
     server: cdata.SlurmMcpServer = await lqcd_mcp_servers.get_slurm_mcp_server(mcp_name)
+
     if server is not None:
-        # Return the path on the proxy server that routes to this backend
-        return server
+        # check the server is really running
+        if server.slurm_job_id != -1:
+            job_state = await lqcd_slurm_manager.check_slurm_job_state(
+                str(server.slurm_job_id)
+            )
+            if job_state in ["RUNNING", "PENDING"]:
+                return server
+            else:
+                lqcd_logger.info(
+                    "Job {} has finished or failed. The mcp server has been removed.".format(
+                        server.slurm_job_id
+                    )
+                )
+                await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(
+                    server.slurm_job_id
+                )
+
     return cdata.SlurmMcpServer(
         mcp_name=mcp_name,
         error_message="Cannot find backend mcp server. Please check the mcp name.",
@@ -929,7 +945,7 @@ async def check_mcp_server_status(
                 valid=False,
             )
     else:
-        await lqcd_mcp_servers.remove_slurm_mcp_server(job_id)
+        await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(job_id)
         ctx.error(
             "Job {} has finished or failed. The mcp server has been removed.".format(
                 job_id
