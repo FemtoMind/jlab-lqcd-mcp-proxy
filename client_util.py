@@ -21,11 +21,34 @@ from lqcd_logger import lqcd_logger
 # It also handles the connection to the proxy and backend servers and closing them
 # Note: mcp_name is also the backend slurm job name 
 class LQCDMCPClient:
+    # inner class for backend client
+    class BackendClient:
+        def __init__(self):
+            self.client_handle: Client | None = None
+            self.exit_stack = AsyncExitStack()
+
+        async def close(self):
+            try:
+                await self.exit_stack.aclose()
+            except Exception as e:
+                lqcd_logger.error(f"Error closing backend client: {e}")
+            finally:
+                self.client_handle = None
+
+        async def connect(self, backend_url: str, elicitation_handler=None):
+            self.client_handle = await self.exit_stack.enter_async_context(
+                Client(backend_url, elicitation_handler=elicitation_handler)
+            )
+
+        @property
+        def client(self) -> Client:
+            return self.client_handle
+
     def __init__(self, proxy_url: str):
         self.proxy_url = proxy_url
         self.proxy_mcp_url = proxy_url + "/jlab"
         self.proxy_client: Client = None
-        self.backend_clients: dict[str, Client] = {}
+        self.backend_clients: dict[str, LQCDMCPClient.BackendClient] = {}
         self.slurm_mcp_servers: dict[str, SlurmMcpServer] = {}
         self.exit_stack = AsyncExitStack()
         self._lock: asyncio.Lock = asyncio.Lock()
@@ -338,11 +361,12 @@ class LQCDMCPClient:
         return mcp_server
             
     # Connect to a backend server
-    async def connect_to_backend_mcp_server(self, mcp_name: str, timeout: int = 60)->Client:
+    async def connect_to_backend_mcp_server(self, mcp_name: str, timeout: int = 60, elicitation_handler=None)->Client | None:
         """ Connect to a backend server.
         args:
             mcp_name: The name of the mcp server.
             timeout: The timeout in seconds to wait for the server to be ready.
+            elicitation_handler: The elicitation handler to use for the connection.
         """
         if self.proxy_client is None:
             lqcd_logger.error("Proxy client is not initialized.")
@@ -391,18 +415,17 @@ class LQCDMCPClient:
         # 3. Connect to Backend (while keeping Proxy connection alive)
         lqcd_logger.debug(f"Connecting to Backend at: {backend_url}")
         try:
-            backend_client = await self.exit_stack.enter_async_context(
-                Client(backend_url)
-            )
+            backend_client = LQCDMCPClient.BackendClient()
+            await backend_client.connect(backend_url, elicitation_handler)
         except Exception as e:
-            lqcd_logger.error(f"Error connecting to backend server: {backend_url}")
+            lqcd_logger.error("Error connecting to backend server: {}. Error message: {}".format(backend_url, e))
             return None
         
         # add the backend client to the cache
         async with self._lock:
             self.backend_clients[mcp_name] = backend_client
         
-        return backend_client
+        return backend_client.client
 
     # Disconnect from a backend server
     async def disconnect_from_backend_mcp_server(self, mcp_name: str):
@@ -420,7 +443,12 @@ class LQCDMCPClient:
             del self.slurm_mcp_servers[mcp_name]
 
     async def close(self):
-        await self.exit_stack.aclose()
+        try:
+            await self.exit_stack.aclose()
+        except Exception as e:
+            lqcd_logger.error(f"Error closing backend client: {e}")
+        finally:
+            self.proxy_client = None
 
     async def get_proxy_client(self)->Client:
         return self.proxy_client
