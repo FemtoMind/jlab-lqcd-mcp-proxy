@@ -7,14 +7,23 @@ import argparse
 import os
 import json
 import logging
+from dataclasses import dataclass
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
 from client_util import LQCDMCPClient
 from common_data import FullSystemResource
 
 from lqcd_logger import lqcd_logger
+
+
+# This is test data structure for elicitation
+@dataclass
+class BinaryInput:
+    a: int
+    b: int
 
 
 # Show computing resources
@@ -32,6 +41,25 @@ async def show_computing_resources(proxy_client: Client) -> FullSystemResource:
 
 # Load env variables from .client_env file if present
 load_dotenv(os.path.join(os.path.dirname(__file__), ".client_env"), override=True)
+
+
+# handle elicitation
+async def elicitation_handle_method(
+    message: str, response_type: type, params, context
+) -> ElicitResult:
+    """
+    This routiner is used to handle elicitations from server side
+    """
+    lqcd_logger.info(f"Elicitation: {message}")
+    lqcd_logger.info(f"Response type: {response_type}")
+    lqcd_logger.info(f"Params: {params}")
+    lqcd_logger.info(f"Context: {context}")
+
+    if response_type.__name__ == "BinaryInput":
+        lqcd_logger.info("Please provide two numbers to multiply.")
+        a = int(input("Enter a: "))
+        b = int(input("Enter b: "))
+        return BinaryInput(a=a, b=b)
 
 
 async def main():
@@ -98,7 +126,7 @@ async def main():
 
     # Connect to the backend mcp server
     backend_client = await client_manager.connect_to_backend_mcp_server(
-        args.mcp_name, 60
+        args.mcp_name, 60, elicitation_handler=elicitation_handle_method
     )
 
     lqcd_logger.info("\n--- Connected to BOTH servers! ---")
@@ -118,25 +146,104 @@ async def main():
 
     print("Now you can work with your backend mcp server.")
     print("Type 'exit' to exit.")
-    while True:
+
+    done = False
+    while not done:
+        has_error = False
+        print("Enter a command:")
         user_input = input()
         if user_input == "exit":
-            break
-        async with backend_client as cl:
-            tool_name = "generate_random_number"
-            tool_args = {}
-            try:
-                result = await cl.call_tool(tool_name, tool_args, timeout=10)
-                lqcd_logger.info(f"Tool result: {result}")
-            except ToolError as e:
-                lqcd_logger.error(f"Tool error: {e}")
-                break
-            except RuntimeError as e:
-                lqcd_logger.error(f"Runtime error: {e}")
-                break
-            except Exception as e:
-                lqcd_logger.error(f"Unexpected error: {e}")
-                break
+            await client_manager.disconnect_from_backend_mcp_server(args.mcp_name)
+            backend_client = None
+            done = True
+        elif user_input == "random":
+            async with backend_client as cl:
+                tool_name = "generate_random_number"
+                tool_args = {}
+                try:
+                    result = await cl.call_tool(tool_name, tool_args, timeout=10)
+                    lqcd_logger.info(f"Tool result: {result}")
+                except ToolError as e:
+                    lqcd_logger.error(f"Tool error: {e}")
+                    has_error = True
+                except RuntimeError as e:
+                    lqcd_logger.error(f"Runtime error: {e}")
+                    has_error = True
+                except Exception as e:
+                    lqcd_logger.error(f"Unexpected error: {e}")
+                    has_error = True
+
+                if has_error:
+                    lqcd_logger.info(
+                        "Checking with Proxy server to see if backend server {} is still alive...".format(
+                            args.mcp_name
+                        )
+                    )
+                    server_status = await client_manager.backend_mcp_server_status(
+                        args.mcp_name
+                    )
+                    lqcd_logger.info(
+                        f"Backend MCP server {args.mcp_name} status: {server_status}"
+                    )
+                    if server_status == "RUNNING":
+                        lqcd_logger.info(
+                            f"Backend MCP server {args.mcp_name} is still alive."
+                        )
+                    else:
+                        lqcd_logger.info(
+                            f"Backend MCP server {args.mcp_name} is not alive."
+                        )
+                        done = True
+                        # Get backend client with the mcp name
+                        lqcd_logger.info(
+                            f"Close the client to the mcp server {args.mcp_name}"
+                        )
+        elif user_input == "multiply":
+            async with backend_client as cl:
+                tool_name = "interactiveMultiplication"
+                tool_args = {}
+                try:
+                    result = await cl.call_tool(tool_name, tool_args, timeout=10)
+                    lqcd_logger.info(f"Tool result: {result}")
+                except ToolError as e:
+                    lqcd_logger.error(f"Tool error: {e}")
+                    has_error = True
+                except RuntimeError as e:
+                    lqcd_logger.error(f"Runtime error: {e}")
+                    has_error = True
+                except Exception as e:
+                    lqcd_logger.error(f"Unexpected error: {e}")
+                    has_error = True
+
+                if has_error:
+                    lqcd_logger.info(
+                        "Checking with Proxy server to see if backend server {} is still alive...".format(
+                            args.mcp_name
+                        )
+                    )
+                    server_status = await client_manager.backend_mcp_server_status(
+                        args.mcp_name
+                    )
+                    lqcd_logger.info(
+                        f"Backend MCP server {args.mcp_name} status: {server_status}"
+                    )
+                    if server_status == "RUNNING":
+                        lqcd_logger.info(
+                            f"Backend MCP server {args.mcp_name} is still alive."
+                        )
+                    else:
+                        lqcd_logger.info(
+                            f"Backend MCP server {args.mcp_name} is not alive."
+                        )
+                        done = True
+                        # Get backend client with the mcp name
+                        lqcd_logger.info(
+                            f"Close the client to the mcp server {args.mcp_name}"
+                        )
+
+        if has_error:
+            await client_manager.disconnect_from_backend_mcp_server(args.mcp_name)
+            backend_client = None
 
     lqcd_logger.info("\nExiting and closing all connections...")
     await client_manager.close()
