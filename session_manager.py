@@ -74,5 +74,13 @@ class SessionManager:
             lqcd_logger.info(f"✨ [Manager] Session {session_id} fully purged.")
 
 
-# Initialize the global manager
-lqcd_session_manager = SessionManager()
+# factory method to retrive the session manager
+_lqcd_session_manager = None
+
+
+def lqcd_session_manager() -> SessionManager:
+    """Get the global session manager."""
+    global _lqcd_session_manager
+    if _lqcd_session_manager is None:
+        _lqcd_session_manager = SessionManager()
+    return _lqcd_session_manager
