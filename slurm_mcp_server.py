@@ -17,14 +17,7 @@ import asyncio
 import os
 import uvicorn
 import pwd
-import logging
-
-# load .env
-from dotenv import load_dotenv
-
 from lqcd_logger import lqcd_logger
-
-
 import common_data as cdata
 
 # our own session manager
@@ -38,26 +31,8 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from lqcd_oidc_auth import validate_authorized_token
 from lqcd_oidc_auth import get_local_account
 
-# load .env file
-load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=True)
-
-lqcd_logger.info("Loading .server_env file...")
-# Check whether we are running inside jlab network
-_jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
-
 # check debug mode
 _debug = os.getenv("DEBUG", "false").lower() == "true"
-
-if _jlab_slurm:
-    lqcd_logger.info("Our servers use Jlab slurm system.")
-else:
-    lqcd_logger.info("Our servers use local test slurm system.")
-
-if _debug:
-    lqcd_logger.setLevel(logging.DEBUG)
-else:
-    lqcd_logger.setLevel(logging.INFO)
-lqcd_logger.info("Loading .server_env file... done.")
 
 
 # A class manage slurm backend servers
@@ -610,7 +585,7 @@ async def validate_user(username: str, ctx: ServerContext):
     real_username = username.strip()
     if len(real_username) > 0:
         # Need to register local account to session manager
-        await lqcd_session_manager.register(ctx.session_id, "username", username)
+        await lqcd_session_manager().register(ctx.session_id, "username", username)
 
         # output some information
         lqcd_logger.info(
@@ -652,7 +627,7 @@ async def validate_user(username: str, ctx: ServerContext):
     response = {"user_id": user_login, "user_account": local_account}
     if local_account is not None:
         # Need to register local account to session manager
-        await lqcd_session_manager.register(ctx.session_id, "username", local_account)
+        await lqcd_session_manager().register(ctx.session_id, "username", local_account)
         lqcd_logger.info(
             f"Mapped user identity '{user_login}' to local account '{local_account}'."
         )
@@ -712,11 +687,11 @@ async def welcome_user(ctx: ServerContext) -> str:
 
     sid = ctx.session_id
 
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
 
     lqcd_logger.info(f"User '{user}' has connected with session id: {sid}")
     lqcd_logger.info(
-        f"Number of active sessions: {len(lqcd_session_manager._sessions)}"
+        f"Number of active sessions: {len(lqcd_session_manager()._sessions)}"
     )
 
     return f"Welcome, {user}, to the LQCD Analysis MCP Server!"
@@ -743,7 +718,7 @@ async def get_user_slurm_accounts(
     """
     sid = ctx.session_id
 
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         return cdata.UserComputingAccounts(
             user_name="unknown",
@@ -765,7 +740,7 @@ async def get_user_slurm_accounts(
         )
 
     # Register slurm accounts to this session
-    await lqcd_session_manager.register(sid, "slurm_accounts", user_accounts)
+    await lqcd_session_manager().register(sid, "slurm_accounts", user_accounts)
 
     cinfo = cdata.UserComputingAccounts(user_name=user, slurm_accounts=user_accounts)
     return cinfo
@@ -785,7 +760,7 @@ async def build_slurm_submission(
         return None
 
     # Register slurm accounts to this session
-    await lqcd_session_manager.register(sid, "slurm_accounts", slurm_accounts)
+    await lqcd_session_manager().register(sid, "slurm_accounts", slurm_accounts)
 
     # ask user to provide script or go through the interactive mode
     result = await ctx.elicit(
@@ -858,7 +833,7 @@ async def check_mcp_server_status(
 ) -> cdata.SlurmMcpServer:
     """Check whether a mcp server has started running and been registered."""
     sid = ctx.session_id
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
@@ -1086,7 +1061,7 @@ async def launch_mcp_server_on_slurm_or_cloud(
     sid = ctx.session_id
 
     # Get user name
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
@@ -1136,7 +1111,7 @@ async def epilogue_mcp_slurm_server(
 ) -> cdata.SlurmMcpServer:
     "Post process after an mcp slurm server is submitted."
     # Get user name
-    user = await lqcd_session_manager.get_resource(ctx.session_id, "username")
+    user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
     # backend_server job id is an integer
     job_id_str = str(backend_mcp_server.slurm_job_id)
     job_id = backend_mcp_server.slurm_job_id
@@ -1285,7 +1260,7 @@ async def launch_mcp_server_on_slurm_with_script(
     sid = ctx.session_id
 
     # Get user name
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
@@ -1390,7 +1365,7 @@ async def launch_mcp_server_on_slurm_with_script_file(
     sid = ctx.session_id
 
     # Get user name
-    user = await lqcd_session_manager.get_resource(sid, "username")
+    user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
