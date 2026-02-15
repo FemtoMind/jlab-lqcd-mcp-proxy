@@ -11,6 +11,7 @@ import time
 import json
 import os
 import sys
+from dotenv import load_dotenv
 from fastapi.security import HTTPBearer
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -19,12 +20,38 @@ from fastmcp import FastMCP, Context
 from fastmcp.server.middleware import MiddlewareContext
 from starlette.types import Message
 import uvicorn
+from uvicorn.config import LOGGING_CONFIG
 
 # Our own logger
 import logging
-from lqcd_logger import lqcd_logger
+from lqcd_logger import lqcd_logger, setup_lqcd_file_logger, is_logging_to_file
 
-lqcd_logger.setLevel(logging.DEBUG)
+# load .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=True)
+
+# check log file name
+log_file_name = os.getenv("PROXY_LOG_FILE")
+if log_file_name:
+    setup_lqcd_file_logger(log_file_name)
+
+lqcd_logger.info("Loading .server_env file...")
+# Check whether we are running inside jlab network
+_jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
+
+# check debug mode
+_debug = os.getenv("DEBUG", "false").lower() == "true"
+
+if _jlab_slurm:
+    lqcd_logger.info("Our servers use Jlab slurm system.")
+else:
+    lqcd_logger.info("Our servers use local test slurm system.")
+
+if _debug:
+    lqcd_logger.setLevel(logging.DEBUG)
+else:
+    lqcd_logger.setLevel(logging.INFO)
+lqcd_logger.info("Loading .server_env file... done.")
+
 
 from lqcd_mcp_main import lqcd_mcp_main, lqcd_mcp_main_app
 from lqcd_mcp_main import setup_mcp_servers
@@ -224,14 +251,14 @@ async def request_middleware(request: Request, call_next):
                 lqcd_logger.info(
                     f"Cleaning up cloud server data for session id: {session_id}"
                 )
-                await lqcd_session_manager.cleanup(session_id)
+                await lqcd_session_manager().cleanup(session_id)
         elif request.url.path.startswith("/jlab"):
             lqcd_logger.info(f"Client disconnects from jlab proxy server")
-            if session_id and await lqcd_session_manager.session_exists(session_id):
+            if session_id and await lqcd_session_manager().session_exists(session_id):
                 lqcd_logger.info(
                     f"Cleaning up jlab proxy server data for session id: {session_id}"
                 )
-                await lqcd_session_manager.cleanup(session_id)
+                await lqcd_session_manager().cleanup(session_id)
 
     # Process the request
     response = await call_next(request)
@@ -373,18 +400,31 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
 
 
 if __name__ == "__main__":
+    # get the session manager
+    session_manager = lqcd_session_manager()
+
     # read OIDC authentication configuration from file
     read_oidc_auth_info()
     # load user account mapping from file
     load_user_account_mapping()
 
     parser = argparse.ArgumentParser(
-        description="MCP Streamable HTTP LQCD Analysis server"
+        description="MCP Streamable HTTP LQCD Analysis proxy server"
     )
     parser.add_argument(
         "--port", type=int, default=8123, help="Server port to listen on"
     )
+
     args = parser.parse_args()
+
+    # check log file is set
+    if is_logging_to_file():
+        lqcd_logger.info("Log file is set, using file logger")
+        custom_log_config = None
+    else:
+        lqcd_logger.info("Log file is not set, using console logger")
+        custom_log_config = LOGGING_CONFIG
+
     # You run this server using uvicorn, which runs the FastAPI app
     # fastmcp run server.py automatically handles this if you use its CLI
     # but for local testing you can use uvicorn directly on the 'app' object
@@ -416,7 +456,10 @@ if __name__ == "__main__":
             port=args.port,
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
+            log_config=custom_log_config,  # Prevent uvicorn from overwriting our logging config
         )
     else:
         lqcd_logger.info("Running without HTTPS")
-        uvicorn.run(proxy_app, host="0.0.0.0", port=args.port)
+        uvicorn.run(
+            proxy_app, host="0.0.0.0", port=args.port, log_config=custom_log_config
+        )
