@@ -16,6 +16,7 @@ from common_data import OIDCAuthInfo
 # Global authentication information
 __auth_info: OIDCAuthInfo = None
 
+
 # Read a json file pointed by en env variable
 # to get authentication information and convert to OIDCAuthInfo
 def read_oidc_auth_info():
@@ -44,7 +45,7 @@ def read_oidc_auth_info():
         lqcd_logger.error(f"Error parsing JSON: {e}")
         __auth_info = None
         return
-        
+
     # Finally set the global auth info
     __auth_info = info
     lqcd_logger.info("OIDC authentication information loaded successfully.")
@@ -52,6 +53,8 @@ def read_oidc_auth_info():
 
 # Load user account mapping from a JSON file
 __user_account_mapping: dict[str, str] = {}
+
+
 def load_user_account_mapping():
     global __user_account_mapping
     file_path = os.getenv("LQCDMCP_USERID_MAP_FILE", None)
@@ -66,10 +69,12 @@ def load_user_account_mapping():
         lqcd_logger.error(f"Error loading user account mapping: {e}")
         return {}
     lqcd_logger.info("User account mapping loaded successfully.")
-    
+
+
 # Look up local account by user id
 def get_local_account(user_id: str) -> str | None:
     return __user_account_mapping.get(user_id, None)
+
 
 # Helper function to validate OIDC token
 def validate_authorized_token(token):
@@ -94,23 +99,23 @@ def validate_authorized_token(token):
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
-            print(f"DEBUG: UserInfo Response: {response.text}")
-            print("Token is valid and active.")
+            lqcd_logger.debug(f"UserInfo Response: {response.text}")
+            lqcd_logger.info("Token is valid and active.")
             return True, response.json()
         elif response.status_code == 401:
-            print(
+            lqcd_logger.error(
                 f"Token is invalid or expired: {response.json().get('message', 'Unauthorized')}"
             )
             return False, response.json()
         elif response.status_code == 403:
             # A 403 can mean insufficient scope or rate limiting
             message = response.json().get("message", "Forbidden")
-            print(
+            lqcd_logger.error(
                 f"Token is valid but lacks sufficient permissions or is rate-limited: {message}"
             )
             return False, response.json()
         else:
-            print(
+            lqcd_logger.error(
                 f"An unexpected error occurred. Status code: {response.status_code}, Message: {response.text}"
             )
             return False, {
@@ -119,12 +124,15 @@ def validate_authorized_token(token):
             }
 
     except requests.exceptions.RequestException as e:
-        print(f"A connection error occurred: {e}")
+        lqcd_logger.error(f"A connection error occurred: {e}")
         return False, None
-    
+
+
 # Use fastapi router to define a router to handle authentication here
 from fastapi import APIRouter
+
 auth_router = APIRouter()
+
 
 @auth_router.post("/auth/device-code")
 async def start_auth_device_flow():
@@ -144,6 +152,7 @@ async def start_auth_device_flow():
         )
         return resp.json()
 
+
 @auth_router.post("/auth/poll")
 async def poll_auth_token(device_code: str):
     if __auth_info is None:
@@ -162,6 +171,3 @@ async def poll_auth_token(device_code: str):
             headers={"Accept": "application/json"},
         )
         return resp.json()
-
-
-
