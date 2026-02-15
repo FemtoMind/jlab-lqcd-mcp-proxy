@@ -11,5 +11,7 @@ USE_HTTPS=true
 # SSL CERT and Key File
 PROXY_CERT_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/cert.pem
 PROXY_KEY_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
+# Log file
+PROXY_LOG_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/server.log
 # Debug mode
 DEBUG=true
