@@ -34,6 +34,14 @@ from lqcd_oidc_auth import get_local_account
 # check debug mode
 _debug = os.getenv("DEBUG", "false").lower() == "true"
 
+# Check whether we are running inside jlab network
+_jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
+
+if _jlab_slurm:
+    lqcd_logger.info("Our slurm mcp service uses Jlab slurm system.")
+else:
+    lqcd_logger.info("Our slurm mcp service uses local test slurm system.")
+
 
 # A class manage slurm backend servers
 class SlurmMcpServers:
