@@ -515,10 +515,23 @@ $cmd
 
         lqcd_logger.info("User {} and gid {} submitting slurm job".format(user, gid))
         # submit job using --job-name to override the job name in the script
+
+        # assume user home directory is /home/user
+        home_dir = "/home/{}".format(user)
         try:
             pipe = subprocess.Popen(
-                # ["sudo", "sbatch", "--uid", user, "--gid", str(gid), "--job-name", mcp_name],
-                ["sudo", "-u", user, "sbatch", "--job-name", mcp_name],
+                [
+                    "sudo",
+                    "sbatch",
+                    "--uid",
+                    user,
+                    "--gid",
+                    str(gid),
+                    "--job-name",
+                    mcp_name,
+                    "--export=HOME={}".format(home_dir),
+                ],
+                # ["sudo", "-u", user, "sbatch", "--job-name", mcp_name],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
