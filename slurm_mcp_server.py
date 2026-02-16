@@ -489,31 +489,13 @@ $cmd
         # check whether this process is running as root or not
         if os.geteuid() != 0:
             lqcd_logger.warning("This process is not running as root!")
-            cmd = "sudo sbatch"
+            cmd: list[str] = ["sudo", "sbatch"]
         else:
-            cmd = "sbatch"
+            cmd: list[str] = ["sbatch"]
 
-        """
-        # dump job script to file
-        rndfile = "/tmp/slurm_mcp_server_" + str(uuid.uuid4()) + ".sh"
-        with open(rndfile, "w") as f:
-            f.write(job_script)
+        # ["sudo", "-u", user, "sbatch", "--job-name", mcp_name]
+        # The above command could be used if user account is avaiable on the machine.
 
-        try:
-            result = subprocess.Popen(
-                ["sudo", "sbatch", "--uid", user, "--gid", str(gid), rndfile],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            output = result.stdout.read().strip()
-            err = result.stderr.read().strip()
-            result.wait()
-        except Exception as e:
-            lqcd_logger.error(f"Failed to submit slurm job: {e}")
-            raise e
-
-        """
         # check first characters of the script to see if it is a valid script
         job_script = job_script.lstrip()
         if job_script[:2] != "#!":
@@ -526,20 +508,22 @@ $cmd
 
         # assume user home directory is /home/user
         home_dir = "/home/{}".format(user)
+
+        # build the command list
+        cmd.extend(
+            [
+                "--uid",
+                user,
+                "--gid",
+                str(gid),
+                "--job-name",
+                mcp_name,
+                "--export=HOME={}".format(home_dir),
+            ]
+        )
         try:
             pipe = subprocess.Popen(
-                [
-                    "sudo",
-                    "sbatch",
-                    "--uid",
-                    user,
-                    "--gid",
-                    str(gid),
-                    "--job-name",
-                    mcp_name,
-                    "--export=HOME={}".format(home_dir),
-                ],
-                # ["sudo", "-u", user, "sbatch", "--job-name", mcp_name],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
