@@ -42,9 +42,9 @@ _jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
 _debug = os.getenv("DEBUG", "false").lower() == "true"
 
 if _jlab_slurm:
-    lqcd_logger.info("Our servers use Jlab slurm system.")
+    lqcd_logger.info("Our server uses Jlab slurm system.")
 else:
-    lqcd_logger.info("Our servers use local test slurm system.")
+    lqcd_logger.info("Our server uses local test slurm system.")
 
 if _debug:
     lqcd_logger.setLevel(logging.DEBUG)
