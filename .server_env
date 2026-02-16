@@ -1,17 +1,17 @@
 # SLURM setting
 MCP_USE_JLAB_SLURM=false
 # OIDC setting file
-#LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp/lqcd_oidc_settings_cilogon.json
-LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp/lqcd_oidc_settings_github.json
+#LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
+LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
 # Convert user id to local account mapping file
-#LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp/lqcd_userid_map.json
-LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp/lqcd_userid_map_github.json
+#LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
+LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
 # Use https
-USE_HTTPS=true
+# USE_HTTPS=true
 # SSL CERT and Key File
 PROXY_CERT_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/cert.pem
 PROXY_KEY_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
 # Log file
-PROXY_LOG_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/server.log
+# PROXY_LOG_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/server.log
 # Debug mode
 DEBUG=true
