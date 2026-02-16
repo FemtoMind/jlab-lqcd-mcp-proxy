@@ -83,7 +83,8 @@ async def setup_run(proxy_url: str, port: int) -> str:
         hostname, ip_address = get_hostname_and_ip_address()
         mcp_url = f"http://{ip_address}:{port}/mcp"
         status = await register_mcp_slurm_server(proxy_url, mcp_name, mcp_url)
-        while status is None:
+        num_tries: int = 0
+        while status is None and num_tries < 10:
             await asyncio.sleep(5)
             lqcd_logger.info(
                 "Retrying to register mcp slurm server {} to proxy server {}".format(
@@ -91,6 +92,7 @@ async def setup_run(proxy_url: str, port: int) -> str:
                 )
             )
             status = await register_mcp_slurm_server(proxy_url, mcp_name, mcp_url)
+            num_tries +=1
         if status is None:
             lqcd_logger.error("Failed to register mcp slurm server")
             exit(1)
