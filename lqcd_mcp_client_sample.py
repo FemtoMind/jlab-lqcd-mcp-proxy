@@ -172,10 +172,10 @@ async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
         },
         extra_body={},
         model=llm_model,
-        max_tokens=1000,
+        max_tokens=4096,
         messages=messages,
         tools=available_tools,
-        tool_choice="auto",  # Let the model decide whether to call a tool
+        tool_choice="required",  # Let the model decide whether to call a tool
     )
 
     return response, messages
@@ -197,12 +197,9 @@ async def handle_tool_calls(
 
     # whether there is any content from the response message
     content = response_message.content
-
     final_text = []
 
-    if content:
-        final_text.append(content)
-    elif response_message.tool_calls:
+    if response_message.tool_calls:
         for tool_call in response_message.tool_calls:
             tool_name = tool_call.function.name
             tool_args = tool_call.function.arguments
@@ -229,12 +226,14 @@ async def handle_tool_calls(
                 },
                 extra_body={},
                 model=llm_model,
-                max_tokens=1000,
+                max_tokens=4096,
                 messages=messages,
             )
             final_text.append(response.choices[0].message.content)
+    elif content:
+        final_text.append(content)
 
-        return "\n".join(final_text)
+    return "\n".join(final_text)
 
 
 # Talk to an LLM and the proxy to launch and connect to a backend MCP server
