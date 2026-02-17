@@ -6,6 +6,7 @@ import asyncio
 import argparse
 import json
 import logging
+import os
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
