@@ -122,19 +122,13 @@ async def submit_job_test(
     """Submit a job to the server without LLM."""
     proxy_client = await client_manager.get_proxy_client()
 
-    # open file and dump it to a string
-    with open(filename, "r") as f:
-        job_script = f.read()
+    mcp_server: SlurmMcpServer = await client_manager.launch_backend_mcp_server(
+        mcp_name, filename, True, True
+    )
 
-    tool_name = "launch_mcp_server_on_slurm_with_script"
-    tool_args = {
-        "wait": True,
-        "submission_script": job_script,
-    }
-    result = await proxy_client.call_tool(tool_name, tool_args)
-    mcp_server: SlurmMcpServer = result.data
-    lqcd_logger.debug(f"Tool {tool_name} returned: {mcp_server}")
-    return result.content[0].text
+    lqcd_logger.debug(f"MCP server launched: {mcp_server}")
+
+    return mcp_server
 
 
 # Talk to an LLM and the proxy
@@ -261,9 +255,8 @@ async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
                 client_manager, mcp_name, filename
             )
             lqcd_logger.debug(
-                "Final response from LLM and tools:\n{}".format(final_response_text)
+                "Final response from proxy:\n{}".format(final_response_text)
             )
-            break
         else:
             llm_response, messages = await get_tool_calls_from_llm(
                 client_manager, user_input
@@ -332,9 +325,12 @@ async def main():
 
     client_manager = LQCDMCPClient(args.proxy_url)
 
-    if client_manager.do_debug():
+    if await client_manager.do_debug():
         lqcd_logger.info("Debug mode enabled.")
         lqcd_logger.setLevel(logging.DEBUG)
+    else:
+        lqcd_logger.info("Debug mode disabled.")
+        lqcd_logger.setLevel(logging.INFO)
 
     await client_manager.connect_to_proxy()
     proxy_client = await client_manager.get_proxy_client()
