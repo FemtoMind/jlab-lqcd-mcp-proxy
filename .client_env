@@ -9,4 +9,7 @@ MCP_RUN_ENV=global
 # JLab LLM Key
 JLAB_LLM_KEY=
 JLAB_LLM_MODEL=openai/gpt-oss-120b
-DEBUG=false
+# Trust client without authentication (local test only)
+# TRUST_CLIENT=true
+# Debug mode
+DEBUG=true
