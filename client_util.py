@@ -16,6 +16,18 @@ from common_data import FullSystemResource
 from common_data import UserComputingAccounts
 from lqcd_logger import lqcd_logger
 
+# Get process owner
+def _client_process_owner() -> str | None:
+    try:
+        # Get the real user ID of the current process
+        uid = os.getuid()
+        # Look up the username associated with that UID
+        user_info = pwd.getpwuid(uid)
+        return user_info.pw_name
+    except Exception as e:
+        print(f"Error getting process owner: {e}")
+        return None
+
 # LQCD MCP client class
 # This class manages both proxy and backend clients
 # It also handles the connection to the proxy and backend servers and closing them
@@ -52,6 +64,7 @@ class LQCDMCPClient:
         self.slurm_mcp_servers: dict[str, SlurmMcpServer] = {}
         self.exit_stack = AsyncExitStack()
         self._lock: asyncio.Lock = asyncio.Lock()
+        self._trust_client = False
 
         # set up run environment
         self.jlab_run = False
@@ -79,6 +92,9 @@ class LQCDMCPClient:
         self.llm_model = os.getenv("LLM_MODEL")
         if self.jlab_run:
             self.llm_model = os.getenv("JLAB_LLM_MODEL")
+
+        # Check if no authentication is needed
+        self._trust_client = os.getenv("TRUST_CLIENT", "false").lower() == "true"
 
     # Authenticate to OIDC provider
     async def __login(self) -> str | None:
@@ -142,13 +158,20 @@ class LQCDMCPClient:
     async def connect_to_proxy(self):
         """Connect to proxy server and authenticate the client."""
         # First, authenticate to get access token
-        access_token = await self.__login()
+        access_token = None
+        if self._trust_client == False:
+            access_token = await self.__login()
 
-        # check token
-        if access_token is None:
-            lqcd_logger.error("Failed to obtain access token from OIDC provider.")
-            raise Exception("Failed to authenticate to OIDC provider.")
-        else:
+            # check token
+            if access_token is None:
+                lqcd_logger.error("Failed to obtain access token from OIDC provider.")
+                raise Exception("Failed to authenticate to OIDC provider.")
+        
+        if self._trust_client:
+            client_args = {
+                "url": self.proxy_mcp_url,
+            }
+        else:   
             client_args = {
                 "url": self.proxy_mcp_url,
                 "headers": {"Authorization": f"Bearer {access_token}"}
@@ -169,7 +192,7 @@ class LQCDMCPClient:
         if not access_token is None:
             tool_args = {"username": ""}
         else:
-            tool_args = {"username": get_process_owner()}
+            tool_args = {"username": _client_process_owner()}
         
         result = await self.proxy_client.call_tool("validate_user", tool_args)
 
