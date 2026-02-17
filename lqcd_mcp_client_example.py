@@ -85,6 +85,9 @@ async def main():
     if await client_manager.do_debug():
         lqcd_logger.info("Debug mode enabled.")
         lqcd_logger.setLevel(logging.DEBUG)
+    else:
+        lqcd_logger.info("Debug mode disabled.")
+        lqcd_logger.setLevel(logging.INFO)
 
     await client_manager.connect_to_proxy()
     proxy_client = await client_manager.get_proxy_client()
