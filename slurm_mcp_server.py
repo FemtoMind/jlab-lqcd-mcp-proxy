@@ -31,6 +31,9 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 from lqcd_oidc_auth import validate_authorized_token
 from lqcd_oidc_auth import get_local_account
 
+# Get process owner
+from server_util import get_process_owner
+
 # check debug mode
 _debug = os.getenv("DEBUG", "false").lower() == "true"
 
@@ -487,10 +490,25 @@ $cmd
     ) -> str | None:
         """Submit a slurm job."""
         # check whether this process is running as root or not
+        # if not, check if it is running as the same user as the slurm job
+        # if not, use sudo to submit the job
+        need_privilege: bool = True
         if os.geteuid() != 0:
             lqcd_logger.warning("This process is not running as root!")
-            cmd: list[str] = ["sudo", "sbatch"]
+            server_owner = get_process_owner()
+            if server_owner != user:
+                lqcd_logger.warning(
+                    "This process is not running as the same user as the slurm job!"
+                )
+                cmd: list[str] = ["sudo", "sbatch"]
+            else:
+                lqcd_logger.info(
+                    "This process is running as the same user as the slurm job!"
+                )
+                cmd: list[str] = ["sbatch"]
+                need_privilege = False
         else:
+            lqcd_logger.info("This process is running as root!")
             cmd: list[str] = ["sbatch"]
 
         # ["sudo", "-u", user, "sbatch", "--job-name", mcp_name]
@@ -509,18 +527,29 @@ $cmd
         # assume user home directory is /home/user
         home_dir = "/home/{}".format(user)
 
-        # build the command list
-        cmd.extend(
-            [
-                "--uid",
-                user,
-                "--gid",
-                str(gid),
-                "--job-name",
-                mcp_name,
-                "--export=HOME={}".format(home_dir),
-            ]
-        )
+        if need_privilege:
+            # build the command list
+            cmd.extend(
+                [
+                    "--uid",
+                    user,
+                    "--gid",
+                    str(gid),
+                    "--job-name",
+                    mcp_name,
+                    "--export=HOME={}".format(home_dir),
+                ]
+            )
+        else:
+            # build the command list
+            cmd.extend(
+                [
+                    "--job-name",
+                    mcp_name,
+                    "--export=HOME={}".format(home_dir),
+                ]
+            )
+        # Now submit job
         try:
             pipe = subprocess.Popen(
                 cmd,
@@ -733,6 +762,8 @@ async def get_user_slurm_accounts(
         )
 
     user_accounts = await lqcd_slurm_manager.get_slurm_accounts(user)
+
+    lqcd_logger.debug(f"User '{user}' has slurm accounts: {user_accounts}")
 
     if len(user_accounts) == 0:
         lqcd_logger.warning("User {} does not have any slurm accounts.".format(user))
