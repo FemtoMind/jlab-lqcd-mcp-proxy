@@ -16,6 +16,7 @@ from common_data import FullSystemResource
 from common_data import UserComputingAccounts
 from lqcd_logger import lqcd_logger
 
+
 # Get process owner
 def _client_process_owner() -> str | None:
     try:
@@ -28,10 +29,11 @@ def _client_process_owner() -> str | None:
         print(f"Error getting process owner: {e}")
         return None
 
+
 # LQCD MCP client class
 # This class manages both proxy and backend clients
 # It also handles the connection to the proxy and backend servers and closing them
-# Note: mcp_name is also the backend slurm job name 
+# Note: mcp_name is also the backend slurm job name
 class LQCDMCPClient:
     # inner class for backend client
     class BackendClient:
@@ -113,7 +115,8 @@ class LQCDMCPClient:
             while True:
                 poll = (
                     await client.post(
-                        f"{self.proxy_url}/auth/poll", params={"device_code": res["device_code"]}
+                        f"{self.proxy_url}/auth/poll",
+                        params={"device_code": res["device_code"]},
                     )
                 ).json()
 
@@ -152,7 +155,6 @@ class LQCDMCPClient:
         user_info: UserComputingAccounts = result.data
 
         return user_info
-        
 
     # connect to proxy server
     async def connect_to_proxy(self):
@@ -166,15 +168,15 @@ class LQCDMCPClient:
             if access_token is None:
                 lqcd_logger.error("Failed to obtain access token from OIDC provider.")
                 raise Exception("Failed to authenticate to OIDC provider.")
-        
+
         if self._trust_client:
             client_args = {
                 "url": self.proxy_mcp_url,
             }
-        else:   
+        else:
             client_args = {
                 "url": self.proxy_mcp_url,
-                "headers": {"Authorization": f"Bearer {access_token}"}
+                "headers": {"Authorization": f"Bearer {access_token}"},
             }
 
         lqcd_logger.info(f"Connecting to Proxy at: {self.proxy_mcp_url}")
@@ -193,7 +195,7 @@ class LQCDMCPClient:
             tool_args = {"username": ""}
         else:
             tool_args = {"username": _client_process_owner()}
-        
+
         result = await self.proxy_client.call_tool("validate_user", tool_args)
 
         lqcd_logger.debug(f"Connected to Proxy. User Info: {result}")
@@ -203,7 +205,7 @@ class LQCDMCPClient:
         user_account = user_info.get("user_account", "unknown")
         user_id = user_info.get("user_id", "unknown")
         lqcd_logger.info(f"✅ Connected to Proxy as user id: {user_id}")
-        lqcd_logger.info(f"✅ Connected to Proxy as user: {user_info["user_account"]}")
+        lqcd_logger.info(f"✅ Connected to Proxy as local user: {user_account}")
         if user_account == "unknown":
             lqcd_logger.error(
                 "User account mapping not found. Please ensure your identity is mapped to a local account."
@@ -213,7 +215,7 @@ class LQCDMCPClient:
         else:
             lqcd_logger.info(
                 f"✅ Connected to Proxy {self.proxy_mcp_url} as user: {user_account}"
-                )
+            )
 
         # Get welcome message from proxy server
         # Talk to proxy server and get welcome message
@@ -227,10 +229,17 @@ class LQCDMCPClient:
         cinfo: UserComputingAccounts = await self.show_user_accounts()
 
         if cinfo.valid:
-            print("User {} has slurm accounts: {}".format(cinfo.user_name, cinfo.slurm_accounts))
+            print(
+                "User {} has slurm accounts: {}".format(
+                    cinfo.user_name, cinfo.slurm_accounts
+                )
+            )
         else:
-            print("User {} has no slurm accounts and error message: {}".format(cinfo.user_name, 
-                   cinfo.error_message))
+            print(
+                "User {} has no slurm accounts and error message: {}".format(
+                    cinfo.user_name, cinfo.error_message
+                )
+            )
 
         print("")
         print("Jefferson Lab Current Computing Resources:")
@@ -238,25 +247,23 @@ class LQCDMCPClient:
 
         print("")
 
-
-
     # Check whether a backend mcp server already exists
     async def backend_mcp_server_exists(self, mcp_name: str) -> bool:
         async with self._lock:
             if mcp_name in self.slurm_mcp_servers:
                 return True
-            
+
         # talk to proxy server to check if the backend mcp server exists
         if self.proxy_client is None:
             lqcd_logger.error("Proxy client is not initialized.")
             return False
-        
+
         tool_name = "get_backend_url"
         tool_args = {"mcp_name": mcp_name}
         result = await self.proxy_client.call_tool(tool_name, tool_args)
         lqcd_logger.debug(f"Backend mcp server info: {result}")
         mcp_server: SlurmMcpServer = result.data
-        lqcd_logger.info(f"Backend mcp server info: {mcp_server}")  
+        lqcd_logger.info(f"Backend mcp server info: {mcp_server}")
 
         if mcp_server.slurm_job_id != -1:
             async with self._lock:
@@ -265,22 +272,20 @@ class LQCDMCPClient:
         else:
             return False
 
-
     # Check whether there are any free computing nodes so that one can start
     # a new backend mcp server
     async def computing_nodes_available(self) -> int:
         if self.proxy_client is None:
             lqcd_logger.error("Proxy client is not initialized.")
             return 0
-        
+
         tool_name = "number_of_idle_nodes"
         tool_args = {}
         result = await self.proxy_client.call_tool(tool_name, tool_args)
         lqcd_logger.debug(f"Available computing nodes: {result}")
         idle_nodes = result.data
-        
+
         return idle_nodes
-        
 
     # Check the status of a backend mcp server
     async def backend_mcp_server_status(self, mcp_name: str) -> str:
@@ -293,7 +298,7 @@ class LQCDMCPClient:
         if self.proxy_client is None:
             lqcd_logger.error("Proxy client is not initialized.")
             return "N/A"
-        
+
         tool_name = "check_mcp_server_status"
         job_id = self.slurm_mcp_servers[mcp_name].slurm_job_id
         tool_args = {"job_id": job_id}
@@ -303,17 +308,17 @@ class LQCDMCPClient:
 
         lqcd_logger.debug(f"Backend MCP server {mcp_name} info: {mcp_server}")
 
-        async with self._lock:    
+        async with self._lock:
             # We may need to update the cached mcp server info
             self.slurm_mcp_servers[mcp_name] = mcp_server
 
         return mcp_server.slurm_job_state
 
     # Launch mcp backend server in serveral flavors
-    async def launch_backend_mcp_server(self, mcp_name: str, filename: str, 
-                                        local_file: bool = True, 
-                                        wait: bool = True)->SlurmMcpServer:
-        """ Launch an mcp server on the slurm cluster using a specified file.
+    async def launch_backend_mcp_server(
+        self, mcp_name: str, filename: str, local_file: bool = True, wait: bool = True
+    ) -> SlurmMcpServer:
+        """Launch an mcp server on the slurm cluster using a specified file.
         This file can be a local file or a file on the machine hosting the proxy server.
         One can wait for the server to be ready or not.
         Note: mcp_name should be unique for each server and it is the same as the job name.
@@ -339,33 +344,37 @@ class LQCDMCPClient:
         if self.proxy_client is None:
             lqcd_logger.error("Proxy client is not initialized.")
             return backend_mcp_server
-        
+
         # check whether the server is already running
         if await self.backend_mcp_server_exists(mcp_name):
             lqcd_logger.info(f"Server {mcp_name} is already submitted.")
             return self.slurm_mcp_servers[mcp_name]
-        
+
         if local_file == True:
             # check local file here
             if not os.path.exists(filename):
                 lqcd_logger.error(f"Local file {filename} does not exist.")
                 return backend_mcp_server
-            
-            # check local file is readable  
+
+            # check local file is readable
             if not os.access(filename, os.R_OK):
                 lqcd_logger.error(f"Local file {filename} is not readable.")
                 return backend_mcp_server
 
             # read file content
             with open(filename, "r") as f:
-                submission_script = f.read() 
+                submission_script = f.read()
 
             tool_name = "launch_mcp_server_on_slurm_with_script"
-            tool_args = {"mcp_name": mcp_name, "wait": wait, "submission_script": submission_script}
+            tool_args = {
+                "mcp_name": mcp_name,
+                "wait": wait,
+                "submission_script": submission_script,
+            }
         else:
             tool_name = "launch_mcp_server_on_slurm_with_script_file"
             tool_args = {"mcp_name": mcp_name, "wait": wait, "script_file": filename}
-        
+
         result = await self.proxy_client.call_tool(tool_name, tool_args)
         mcp_server: SlurmMcpServer = result.data
         lqcd_logger.debug(f"Server launch result: {mcp_server}")
@@ -373,7 +382,9 @@ class LQCDMCPClient:
         if mcp_server.valid:
             lqcd_logger.info(f"Server {mcp_server.mcp_name} launched successfully.")
         elif mcp_server.slurm_job_id == -1:
-            lqcd_logger.error(f"Server {mcp_server.mcp_name} launch failed. Error message: {mcp_server.error_message}")
+            lqcd_logger.error(
+                f"Server {mcp_server.mcp_name} launch failed. Error message: {mcp_server.error_message}"
+            )
             return bmcp_server
 
         # add the server to the cache
@@ -382,10 +393,12 @@ class LQCDMCPClient:
             self.slurm_mcp_servers[mcp_server.mcp_name] = mcp_server
 
         return mcp_server
-            
+
     # Connect to a backend server
-    async def connect_to_backend_mcp_server(self, mcp_name: str, timeout: int = 60, elicitation_handler=None)->Client | None:
-        """ Connect to a backend server.
+    async def connect_to_backend_mcp_server(
+        self, mcp_name: str, timeout: int = 60, elicitation_handler=None
+    ) -> Client | None:
+        """Connect to a backend server.
         args:
             mcp_name: The name of the mcp server.
             timeout: The timeout in seconds to wait for the server to be ready.
@@ -395,39 +408,44 @@ class LQCDMCPClient:
             lqcd_logger.error("Proxy client is not initialized.")
             return None
 
-        # check if the server is already cached 
+        # check if the server is already cached
         async with self._lock:
             if mcp_name not in self.slurm_mcp_servers:
                 lqcd_logger.error(f"Server {mcp_name} is not launched yet.")
                 return None
-        
+
         # Check whether we already connected to the backend server
         async with self._lock:
             if mcp_name in self.backend_clients:
                 lqcd_logger.info(f"Server {mcp_name} is already connected.")
                 return self.backend_clients[mcp_name]
-        
+
         # Wait for the server to be ready
         server_status = await self.backend_mcp_server_status(mcp_name)
         while server_status != "RUNNING" and timeout > 0:
-            lqcd_logger.info(f"Server {mcp_name} is not running. Waiting for it to be ready.")
+            lqcd_logger.info(
+                f"Server {mcp_name} is not running. Waiting for it to be ready."
+            )
             await asyncio.sleep(5)
             server_status = await self.backend_mcp_server_status(mcp_name)
             timeout -= 5
-        
+
         if timeout <= 0:
-            lqcd_logger.error(f"Server {mcp_name} is not running after {timeout} seconds.")
+            lqcd_logger.error(
+                f"Server {mcp_name} is not running after {timeout} seconds."
+            )
             return None
-            
+
         # Now get mcp server from our cache which should be updated by the calling
         # server status checker
         async with self._lock:
             backend_info = self.slurm_mcp_servers[mcp_name]
             # sanity check
             if backend_info.url == "" or backend_info.valid == False:
-                lqcd_logger.error(f"Strange: backend server {mcp_name} is not ready. Error message is {backend_info.error_message}.")
+                lqcd_logger.error(
+                    f"Strange: backend server {mcp_name} is not ready. Error message is {backend_info.error_message}."
+                )
                 return None
-        
 
         # Construct full backend URL (routed through proxy)
         # Proxy path: /cloud/{id}/mcp routes to Backend: /mcp
@@ -441,18 +459,22 @@ class LQCDMCPClient:
             backend_client = LQCDMCPClient.BackendClient()
             await backend_client.connect(backend_url, elicitation_handler)
         except Exception as e:
-            lqcd_logger.error("Error connecting to backend server: {}. Error message: {}".format(backend_url, e))
+            lqcd_logger.error(
+                "Error connecting to backend server: {}. Error message: {}".format(
+                    backend_url, e
+                )
+            )
             return None
-        
+
         # add the backend client to the cache
         async with self._lock:
             self.backend_clients[mcp_name] = backend_client
-        
+
         return backend_client.client
 
     # Disconnect from a backend server
     async def disconnect_from_backend_mcp_server(self, mcp_name: str):
-        """ Disconnect from a backend server.
+        """Disconnect from a backend server.
         args:
             mcp_name: The name of the mcp server.
         """
@@ -473,31 +495,30 @@ class LQCDMCPClient:
         finally:
             self.proxy_client = None
 
-    async def get_proxy_client(self)->Client:
+    async def get_proxy_client(self) -> Client:
         return self.proxy_client
 
-    async def get_backend_client(self, mcp_name: str)->Client|None:
+    async def get_backend_client(self, mcp_name: str) -> Client | None:
         async with self._lock:
             if mcp_name not in self.backend_clients:
                 lqcd_logger.error(f"Server {mcp_name} is not connected.")
                 return None
             return self.backend_clients[mcp_name]
 
-    async def get_proxy_url(self)->str:
+    async def get_proxy_url(self) -> str:
         return self.proxy_mcpurl
 
-    async def get_mcp_name(self)->str:
+    async def get_mcp_name(self) -> str:
         return self.mcp_name
-    
-    async def get_openai_client(self)->OpenAI:
+
+    async def get_openai_client(self) -> OpenAI:
         return self.openai
-    
-    async def get_llm_model(self)->str:
+
+    async def get_llm_model(self) -> str:
         return self.llm_model
 
     async def get_exit_stack(self):
         return self.exit_stack
 
-    async def do_debug(self)->bool:
+    async def do_debug(self) -> bool:
         return self.debug
-    
