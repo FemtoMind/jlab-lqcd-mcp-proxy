@@ -120,10 +120,20 @@ async def main():
     lqcd_logger.info(f"Waiting for backend MCP server {args.mcp_name} to be ready...")
     server_status = await client_manager.backend_mcp_server_status(args.mcp_name)
     lqcd_logger.info(f"Backend MCP server {args.mcp_name} status: {server_status}")
-    while server_status != "RUNNING":
+
+    num_retries = 0
+    max_retries = 20
+    while server_status != "RUNNING" and num_retries < max_retries:
         await asyncio.sleep(5)
         server_status = await client_manager.backend_mcp_server_status(args.mcp_name)
         lqcd_logger.info(f"Backend MCP server {args.mcp_name} status: {server_status}")
+        num_retries += 1
+
+    if server_status != "RUNNING":
+        lqcd_logger.error(
+            f"Backend MCP server {args.mcp_name} is not ready after {max_retries*5} seconds."
+        )
+        exit(1)
 
     lqcd_logger.info(f"Backend MCP server {args.mcp_name} is ready.")
 
