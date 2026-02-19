@@ -10,9 +10,13 @@ import os
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
+
 from client_util import LQCDMCPClient
 from common_data import FullSystemResource
 from common_data import SlurmMcpServer
+from common_data import SlurmMcpJob
+from common_data import SlurmMcpScriptFile
 
 from lqcd_logger import lqcd_logger
 
@@ -57,6 +61,63 @@ async def call_backend_tools(backend_client: Client) -> str:
         final_text.append(f"Tool {tool_name} output: {result.content[0].text}")
 
     return "\n".join(final_text)
+
+
+# handle elicitation
+async def elicitation_handle_method(
+    message: str, response_type: type, params, context
+) -> ElicitResult:
+    print(message)
+
+    if response_type.__name__ == "SlurmMcpScriptFile":  # This is a local script file
+        print("Enter a file containing a submission scirpt.")
+        filename = input("Filename: ")
+        if filename == "":
+            print("Looks like you are not ready to submit a job.")
+            return ElicitResult(action="cancel")
+        else:
+            print("Is this a local file or remote file? (local/remote)")
+            answer = input()
+            if answer == "local":
+                if os.path.exists(filename):
+                    # read the file and return the content
+                    with open(filename, "r") as f:
+                        content = f.read()
+                    return SlurmMcpScriptFile(
+                        filename=filename, local=True, content=content
+                    )
+                else:
+                    print("File not found: {}".format(filename))
+                    return ElicitResult(action="cancel")
+            else:
+                return SlurmMcpScriptFile(filename=filename, local=False)
+
+    elif response_type.__name__ == "SlurmMcpJob":  # This is a Slurm job
+        account = input("Slurm account: ")
+        partition = input("Slurm partition: ")
+        run_script = input("Run script: ")
+        num_nodes = input("Number of nodes: ")
+        num_tasks = input("Number of tasks: ")
+        num_cpus = input("Number of CPUs: ")
+        num_cpus_per_task = input("Number of CPUs per task: ")
+        time = input("Wall clock Time in format DD-HH:MM:SS: ")
+        output_dir = input("Output directory: ")
+
+        job: SlurmMcpJob = SlurmMcpJob(
+            account=account,
+            partition=partition,
+            run_script=run_script,
+            num_nodes=num_nodes,
+            num_tasks=num_tasks,
+            num_cpus=num_cpus,
+            num_cpus_per_task=num_cpus_per_task,
+            time=time,
+            output_dir=output_dir,
+        )
+        return job
+    else:
+        lqcd_logger.error("Unknown response type: {}".format(response_type.__name__))
+        return None
 
 
 # Show computing resources
@@ -331,7 +392,7 @@ async def main():
         lqcd_logger.info("Debug mode disabled.")
         lqcd_logger.setLevel(logging.INFO)
 
-    await client_manager.connect_to_proxy()
+    await client_manager.connect_to_proxy(elicitation_handle_method)
     proxy_client = await client_manager.get_proxy_client()
 
     lqcd_logger.info(f"Connected to Proxy at: {proxy_mcp_url}")
