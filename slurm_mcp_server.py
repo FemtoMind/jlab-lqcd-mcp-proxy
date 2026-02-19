@@ -676,12 +676,8 @@ async def validate_user(username: str, ctx: ServerContext):
     return response
 
 
-# Get the backend serve url by server id
-@slurm_mcp.tool(
-    description="Get the backend serve url by mcp name",
-    tags={"slurm", "Jlab"},
-)
-async def get_backend_url(mcp_name: str) -> cdata.SlurmMcpServer:
+# Get the backend serve information by mcp name
+async def _get_backend_server_by_name(mcp_name: str) -> cdata.SlurmMcpServer:
     """Get the proxied URL of a backend server by its ID."""
     if _debug:
         all_servers: list[str] = await lqcd_mcp_servers.get_slurm_mcp_server_names()
@@ -712,6 +708,15 @@ async def get_backend_url(mcp_name: str) -> cdata.SlurmMcpServer:
         error_message="Cannot find backend mcp server. Please check the mcp name.",
         valid=False,
     )
+
+
+# Get the backend serve url by mcp name
+@slurm_mcp.tool(
+    description="Get the backend serve url by mcp name",
+    tags={"slurm", "Jlab"},
+)
+async def get_backend_url(mcp_name: str) -> cdata.SlurmMcpServer:
+    return await _get_backend_server_by_name(mcp_name)
 
 
 # Greeting users
@@ -801,11 +806,11 @@ async def build_slurm_submission(
     # ask user to provide script or go through the interactive mode
     result = await ctx.elicit(
         message="Do you want to provide a slurm submission script or go through the interactive mode?",
-        response_type=str,
+        response_type=cdata.SlurmMcpScriptFile,
     )
 
     if result.action == "accept":
-        return result.response
+        return result.data
     elif result.action == "cancel":
         lqcd_logger.warning(
             "User {} decided not to proceed to launch a mcp server.".format(user)
@@ -979,6 +984,18 @@ async def check_mcp_server_status(
     return backend_mcp_server
 
 
+# another simple tool to return status using mcp name instead of id
+@slurm_mcp.tool(
+    description="Check whether a mcp server exists and return its status and url",
+    tags={"slurm", "Jlab"},
+)
+async def check_mcp_server_status_by_name(
+    mcp_name: str, ctx: ServerContext
+) -> cdata.SlurmMcpServer:
+    """Check whether a mcp server exists and return its status and url."""
+    return await _get_backend_server_by_name(mcp_name)
+
+
 # Check whether there is idle computing nodes for the client
 @slurm_mcp.tool(
     description="""
@@ -1119,8 +1136,12 @@ async def launch_mcp_server_on_slurm_or_cloud(
     # Build submission script
     if isinstance(slurm_job, cdata.SlurmMcpJob):
         submission_script = lqcd_slurm_manager.build_slurm_job_script(user, slurm_job)
-    elif isinstance(slurm_job, str):
-        submission_script = slurm_job
+    elif isinstance(slurm_job, cdata.SlurmMcpScriptFile):
+        if slurm_job.local == False:
+            with open(slurm_job.filename, "r") as f:
+                submission_script = f.read()
+        else:
+            submission_script = slurm_job.content
     else:
         ctx.error("Invalid slurm job.")
         lqcd_logger.error("Invalid slurm job.")
@@ -1133,7 +1154,7 @@ async def launch_mcp_server_on_slurm_or_cloud(
 
     # Submit the job
     mcp_server = await submit_mcp_server_as_slurm_job(
-        user, submission_script, backend_mcp_server, ctx
+        user, mcp_name, submission_script, backend_mcp_server, ctx
     )
     return mcp_server
 
