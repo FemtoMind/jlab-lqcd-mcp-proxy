@@ -298,6 +298,7 @@ class SlurmMcpJob(BaseModel):
 class SlurmMcpScriptFile(BaseModel):
     filename: str = Field(description="Slurm script full file path name")
     local: bool = Field(description="Local file or not", default=True)
+    content: str = Field(description="Slurm script content", default="")
 
     @staticmethod
     def from_json(json_str: str) -> "SlurmMcpScriptFile":
@@ -312,6 +313,7 @@ class SlurmMcpScriptFile(BaseModel):
             [
                 f"Filename: {self.filename}",
                 f"Local: {self.local}",
+                f"Content: {self.content}",
             ]
         )
 
