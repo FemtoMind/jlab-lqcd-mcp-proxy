@@ -157,7 +157,7 @@ class LQCDMCPClient:
         return user_info
 
     # connect to proxy server
-    async def connect_to_proxy(self):
+    async def connect_to_proxy(self, elicitation_handler=None):
         """Connect to proxy server and authenticate the client."""
         # First, authenticate to get access token
         access_token = None
@@ -183,7 +183,10 @@ class LQCDMCPClient:
 
         try:
             self.proxy_client = await self.exit_stack.enter_async_context(
-                Client(StreamableHttpTransport(**client_args))
+                Client(
+                    StreamableHttpTransport(**client_args),
+                    elicitation_handler=elicitation_handler,
+                )
             )
         except Exception as e:
             lqcd_logger.error(f"Error connecting to proxy server: {self.proxy_mcp_url}")
