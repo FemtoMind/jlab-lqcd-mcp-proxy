@@ -319,6 +319,29 @@ class LQCDMCPClient:
 
         return mcp_server.slurm_job_state
 
+    # Check the status of mcp server by name
+    async def backend_mcp_server_status_by_name(self, mcp_name: str) -> str:
+        lqcd_logger.debug(f"Checking status of backend mcp server {mcp_name}...")
+
+        # Check the status of the backend mcp server by contacting the proxy server
+        if self.proxy_client is None:
+            lqcd_logger.error("Proxy client is not initialized.")
+            return "N/A"
+
+        tool_name = "check_mcp_server_status_by_name"
+        tool_args = {"mcp_name": mcp_name}
+        result = await self.proxy_client.call_tool(tool_name, tool_args)
+        lqcd_logger.debug(f"Server status info: {result}")
+        mcp_server: SlurmMcpServer = result.data
+
+        lqcd_logger.debug(f"Backend MCP server {mcp_name} info: {mcp_server}")
+
+        async with self._lock:
+            # We may need to update the cached mcp server info
+            self.slurm_mcp_servers[mcp_name] = mcp_server
+
+        return mcp_server.slurm_job_state
+
     # Launch mcp backend server in serveral flavors
     async def launch_backend_mcp_server(
         self, mcp_name: str, filename: str, local_file: bool = True, wait: bool = True
