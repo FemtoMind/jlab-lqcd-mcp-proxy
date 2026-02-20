@@ -21,6 +21,9 @@ from common_data import SlurmMcpScriptFile
 from lqcd_logger import lqcd_logger
 
 
+BackendMCPClient: Client = None
+
+
 # Test all the tools available on the server
 async def call_backend_tools(backend_client: Client) -> str:
     """Test all the tools available on the server."""
@@ -196,11 +199,20 @@ async def submit_job_test(
 async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
     """Get tools from proxy and talk to an LLM to decide what to do next."""
     messages = [{"role": "user", "content": request}]
+    global BackendMCPClient
 
     proxy_client = await client_manager.get_proxy_client()
     # Get tool response from the server
     tool_response = await proxy_client.list_tools()
     lqcd_logger.debug("response from list_tools: {}".format(tool_response))
+
+    backend_tool_names = []
+    if BackendMCPClient is not None:
+        backend_tool_response = await BackendMCPClient.list_tools()
+        backend_tool_names = [tool.name for tool in backend_tool_response]
+        lqcd_logger.debug(
+            "response from backend list_tools: {}".format(backend_tool_response)
+        )
 
     # Build the tool call request
     available_tools = [
@@ -218,7 +230,24 @@ async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
         }
         for tool in tool_response
     ]
-
+    if BackendMCPClient is not None:
+        available_tools.extend(
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": {
+                            "type": "object",
+                            "properties": tool.inputSchema.get("properties", {}),
+                            "required": tool.inputSchema.get("required", []),
+                        },
+                    },
+                }
+                for tool in backend_tool_response
+            ]
+        )
     lqcd_logger.debug("Available tools for LLM: {}".format(available_tools))
 
     # Get LLM model which is inside the client manager
@@ -239,7 +268,7 @@ async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
         tool_choice="required",  # Let the model decide whether to call a tool
     )
 
-    return response, messages
+    return response, messages, backend_tool_names
 
 
 # Handll proxy tool calls according to LLM response
@@ -247,6 +276,7 @@ async def handle_tool_calls(
     client_manager: LQCDMCPClient,
     llm_response,
     messages,
+    backend_tool_names: list[str] = None,
 ) -> str:
     """Handle tool calls according to LLM response."""
     proxy_client = await client_manager.get_proxy_client()
@@ -269,7 +299,17 @@ async def handle_tool_calls(
             # Execute tool call
             real_args = json.loads(tool_args)
 
-            result = await proxy_client.call_tool(tool_name, real_args)
+            global BackendMCPClient
+            backend_tool_names = backend_tool_names or []
+
+            if tool_name in backend_tool_names and BackendMCPClient is not None:
+                lqcd_logger.info(
+                    f"Routing tool call '{tool_name}' to BACKEND MCP SERVER"
+                )
+                result = await BackendMCPClient.call_tool(tool_name, real_args)
+            else:
+                lqcd_logger.info(f"Routing tool call '{tool_name}' to PROXY SERVER")
+                result = await proxy_client.call_tool(tool_name, real_args)
 
             lqcd_logger.debug(f"Tool {tool_name} returned: {result}")
 
@@ -300,6 +340,7 @@ async def handle_tool_calls(
 # Talk to an LLM and the proxy to launch and connect to a backend MCP server
 async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
     """Talk to an LLM and the proxy to launch and connect to a backend MCP server."""
+    global BackendMCPClient
     while True:
         print("Enter your request to the proxy LLM (type 'exit' to quit):")
         user_input = input()
@@ -317,8 +358,42 @@ async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
             lqcd_logger.debug(
                 "Final response from proxy:\n{}".format(final_response_text)
             )
+        elif user_input.strip().lower() == "backend":
+            lqcd_logger.info("Including backend tools in the conversation...")
+            # check whether mcp name is available
+            if BackendMCPClient is None:
+                lqcd_logger.info(
+                    "Not connected to backend MCP server. Check whether {} is running.".format(
+                        mcp_name
+                    )
+                )
+                status = await client_manager.backend_mcp_server_status_by_name(
+                    mcp_name
+                )
+                lqcd_logger.info(
+                    "Backend MCP server {} status: {}".format(mcp_name, status)
+                )
+                if status == "RUNNING":
+                    lqcd_logger.info(
+                        "Backend MCP server {} is running, connecting to it...".format(
+                            mcp_name
+                        )
+                    )
+                    BackendMCPClient = (
+                        await client_manager.connect_to_backend_mcp_server(mcp_name)
+                    )
+                    tool_response = await BackendMCPClient.list_tools()
+                    lqcd_logger.debug(
+                        "response from backend list_tools: {}".format(tool_response)
+                    )
+                else:
+                    lqcd_logger.info(
+                        "Backend MCP server {} is not running, you ned to ask proxy to launch it.".format(
+                            mcp_name
+                        )
+                    )
         else:
-            llm_response, messages = await get_tool_calls_from_llm(
+            llm_response, messages, backend_tool_names = await get_tool_calls_from_llm(
                 client_manager, user_input
             )
 
@@ -326,7 +401,7 @@ async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
 
             # Process the response and handle tool calls
             final_response_text = await handle_tool_calls(
-                client_manager, llm_response, messages
+                client_manager, llm_response, messages, backend_tool_names
             )
             lqcd_logger.debug(
                 "Final response from LLM and tools:\n{}".format(final_response_text)
