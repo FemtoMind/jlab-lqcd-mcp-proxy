@@ -406,8 +406,14 @@ class SlurmSpawner:
         return job_state
 
     # Stop a mcp server by cancelling it
-    async def stop_slurm_job(self, job_id: str) -> bool:
+    async def stop_slurm_job(self, job_id: str) -> cdata.SlurmJobCancelStatus:
         """Stop a slurm job."""
+        ret_status: cdata.SlurmJobCancelStatus = cdata.SlurmJobCancelStatus(
+            job_id=job_id,
+            status=cdata.SlurmJobCancelStatus._status_value.UNKNOWN,
+            error_message="",
+        )
+
         try:
             result = subprocess.Popen(
                 ["scancel", job_id],
@@ -419,28 +425,45 @@ class SlurmSpawner:
 
             if result.returncode != 0:
                 lqcd_logger.warning(f"Failed to stop slurm job: {result.stderr.read()}")
-                return False
+                ret_status.status = cdata.SlurmJobCancelStatus._status_value.UNKNOWN
+                ret_status.error_message = "Failed to stop slurm job: {}".format(
+                    result.stderr.read()
+                )
+                return ret_status
             else:
-                lqcd_logger.info(f"Successfully stopped slurm job: {job_id}")
-                return True
+                lqcd_logger.info(
+                    f"Successfully executed scancel command for job: {job_id}"
+                )
 
-            output = result.stdout.read().strip()
-            if ouput not in (None, ""):  # scancel return nothing if success
-                lqcd_logger.warning(f"Failed to stop slurm job: {output}")
-                return False
+                output = result.stdout.read().strip()
+                if output not in (None, ""):  # scancel return nothing if success
+                    lqcd_logger.warning(f"Failed to stop slurm job: {output}")
+                    ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
+                    ret_status.error_message = "Failed to stop slurm job: {}".format(
+                        output
+                    )
+                    return ret_status
 
         except Exception as e:
-            lqcd_logger.error(f"Failed to stop slurm job: {e}")
-            return False
+            lqcd_logger.error(f"Failed to execute scancel command: {e}")
+            ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
+            ret_status.error_message = "Failed to execute scancel command: {}".format(e)
+            return ret_status
 
         # check job state
         job_state = await self.check_slurm_job_state(job_id)
         if job_state in ("CANCELLED", "COMPLETED", "FAILED", "COMPLETING", ""):
-            lqcd_logger.info(f"Successfully stopped slurm job: {job_id}")
-            return True
+            lqcd_logger.info(f"Successfully stopped slurm job: {job_id} ")
+            ret_status.status = cdata.SlurmJobCancelStatus._status_value.SUCCESS
+            ret_status.error_message = "Successfully stopped slurm job: {}".format(
+                job_id
+            )
         else:
             lqcd_logger.warning(f"Failed to stop slurm job: {job_state}")
-            return False
+            ret_status.status = cdata.SlurmJobCancelStatus._status_value.UNKNOWN
+            ret_status.error_message = "Failed to stop slurm job: {}".format(job_state)
+
+        return ret_status
 
     # Build a slurm job script
     def build_slurm_job_script(self, user: str, job: cdata.SlurmMcpJob) -> str:
@@ -611,7 +634,7 @@ slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp", log_level="error")
 # to local user account
 @slurm_mcp.tool(
     description="Validate user identity",
-    tags={"auth", "token", "internal"},
+    tags={"auth", "token"},
 )
 async def validate_user(username: str, ctx: ServerContext):
     """Returns the authenticated proxy URL and user identity."""
@@ -994,6 +1017,114 @@ async def check_mcp_server_status_by_name(
 ) -> cdata.SlurmMcpServer:
     """Check whether a mcp server exists and return its status and url."""
     return await _get_backend_server_by_name(mcp_name)
+
+
+# Cacnel a slurm mcp server by job id in integer format
+async def _cancel_mcp_server_by_jobid_int(
+    job_id: int, ctx: ServerContext
+) -> cdata.SlurmJobCancelStatus:
+    """Cancel a slurm mcp server by job id."""
+    sid = ctx.session_id
+    user = await lqcd_session_manager().get_resource(sid, "username")
+    if user is None:
+        ctx.error("Cannot find username associated with this session.")
+        lqcd_logger.error("Cannot find username associated with this session.")
+        return cdata.SlurmJobCancelStatus(
+            job_id=str(job_id),
+            status=cdata.SlurmJobCancelStatus._status_value.UNKNOWN,
+            error_message="Cannot find username associated with this session.",
+        )
+
+    # Check whether this job is alive
+    backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(job_id)
+    lqcd_logger.debug(
+        "MCP server returned from job id {} info: {}".format(job_id, backend_mcp_server)
+    )
+    if backend_mcp_server is None:
+        ctx.error("Cannot find mcp server associated with this jobid {}".format(job_id))
+        lqcd_logger.error(
+            "Cannot find mcp server associated with this jobid {}".format(job_id)
+        )
+        return cdata.SlurmJobCancelStatus(
+            job_id=str(job_id),
+            status=cdata.SlurmJobCancelStatus._status_value.NOT_FOUND,
+            error_message="Cannot find mcp server associated with this jobid {}".format(
+                job_id
+            ),
+        )
+
+    if user != backend_mcp_server.owner:
+        ctx.error(
+            "User {} does not have permission to check the mcp server status.".format(
+                user
+            )
+        )
+        lqcd_logger.error(
+            "User {} does not have permission to check the mcp server status.".format(
+                user
+            )
+        )
+        return cdata.SlurmJobCancelStatus(
+            job_id=str(job_id),
+            status=cdata.SlurmJobCancelStatus._status_value.NOT_OWNER,
+            error_message="User {} is not the owner of job {}.".format(user, job_id),
+        )
+
+    # Finally delete the job
+    ret_status: cdata.SlurmJobCancelStatus = await lqcd_slurm_manager.stop_slurm_job(
+        str(job_id)
+    )
+
+    # check the delete status
+    if ret_status.status == cdata.SlurmJobCancelStatus._status_value.SUCCESS:
+        await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(job_id)
+    else:
+        ctx.error("Failed to delete job {}".format(job_id))
+        lqcd_logger.error("Failed to delete job {}".format(job_id))
+    return ret_status
+
+
+# Cancel a slurm mcp server by job id
+@slurm_mcp.tool(
+    description="Cancel a slurm mcp server by job id in an integer format",
+    tags={"slurm", "Jlab"},
+)
+async def cancel_mcp_server_by_jobid(
+    job_id: int, ctx: ServerContext
+) -> cdata.SlurmJobCancelStatus:
+    """Cancel a slurm mcp server by job id."""
+    return await _cancel_mcp_server_by_jobid_int(job_id, ctx)
+
+
+# Cancel a slurm mcp server by mcp name or job name
+@slurm_mcp.tool(
+    description="Cancel a slurm mcp server by mcp name or job name",
+    tags={"slurm", "Jlab"},
+)
+async def cancel_mcp_server_by_name(
+    name: str, ctx: ServerContext
+) -> cdata.SlurmJobCancelStatus:
+    """Cancel a slurm mcp server by job name."""
+    ret_status: cdata.SlurmJobCancelStatus = cdata.SlurmJobCancelStatus(
+        job_id=str(-1),
+        status=cdata.SlurmJobCancelStatus._status_value.UNKNOWN,
+        error_message="",
+    )
+    backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server(name)
+    if backend_mcp_server is None:
+        ctx.error("Cannot find mcp server associated with this name {}".format(name))
+        lqcd_logger.error(
+            "Cannot find mcp server associated with this name {}".format(name)
+        )
+        ret_status.status = cdata.SlurmJobCancelStatus._status_value.NOT_FOUND
+        ret_status.error_message = (
+            "Cannot find mcp server associated with this name {}".format(name)
+        )
+    else:
+        ret_status = await _cancel_mcp_server_by_jobid_int(
+            backend_mcp_server.slurm_job_id, ctx
+        )
+    return ret_status
 
 
 # Check whether there is idle computing nodes for the client
