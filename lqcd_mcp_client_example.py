@@ -253,6 +253,28 @@ async def main():
                         lqcd_logger.info(
                             f"Close the client to the mcp server {args.mcp_name}"
                         )
+        elif user_input == "remote_exec":
+            command = input(">> : ")
+            tool_name = "remote_exec"
+            tool_args = {"cmd": command}
+            try:
+                result = await backend_client.call_tool(
+                    tool_name, tool_args, timeout=10
+                )
+                output = result.content[0].text
+                lines = output.split("\n")
+                for line in lines:
+                    print(line)
+
+            except ToolError as e:
+                lqcd_logger.error(f"Tool error: {e}")
+                has_error = True
+            except RuntimeError as e:
+                lqcd_logger.error(f"Runtime error: {e}")
+                has_error = True
+            except Exception as e:
+                lqcd_logger.error(f"Unexpected error: {e}")
+                has_error = True
 
         if has_error:
             await client_manager.disconnect_from_backend_mcp_server(args.mcp_name)
