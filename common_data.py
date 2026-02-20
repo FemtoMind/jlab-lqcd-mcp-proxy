@@ -1,5 +1,6 @@
 # Data used across analysis MCP server and client
 import json
+import enum
 from pydantic import BaseModel, Field
 from datetime import timedelta
 
@@ -314,6 +315,38 @@ class SlurmMcpScriptFile(BaseModel):
                 f"Filename: {self.filename}",
                 f"Local: {self.local}",
                 f"Content: {self.content}",
+            ]
+        )
+
+
+# Slurm job cancel status
+class SlurmJobCancelStatus(BaseModel):
+    class _status_value(enum.Enum):
+        UNKNOWN = "UNKNOWN"
+        SUCCESS = "SUCCESS"
+        CANCELED = "CANCELED"
+        NOT_FOUND = "NOT_FOUND"
+        FAILED = "FAILED"
+        NOT_OWNER = "NOT_OWNER"
+
+    job_id: str = Field(description="Slurm job id in string format")
+    status: _status_value = Field(description="Slurm job cancel status")
+    error_message: str = Field(description="Error message", default="")
+
+    @staticmethod
+    def from_json(json_str: str) -> "SlurmJobCancelStatus":
+        json_data = json.loads(json_str)
+        return SlurmJobCancelStatus(**json_data)
+
+    def to_json(self):
+        return json.dumps(self.dict())
+
+    def __str__(self):
+        return "\n".join(
+            [
+                f"Job id: {self.job_id}",
+                f"Status: {self.status}",
+                f"Error message: {self.error_message}",
             ]
         )
 
