@@ -9,6 +9,7 @@ import argparse
 import uvicorn
 import os
 import random
+import subprocess
 from fastmcp import FastMCP
 from fastmcp import Context
 from dataclasses import dataclass
@@ -35,14 +36,14 @@ async def welcome_user(user: str) -> str:
     return f"Welcome, {user}, to the test server!"
 
 
-@test_mcp.tool()
+@test_mcp.tool(description="Return a random integer between 1 and 100")
 async def generate_random_number(ctx: Context) -> int:
     """Return a random integer between 1 and 100"""
     lqcd_logger.info("session id in random tool: {}".format(ctx.session_id))
     return random.randint(1, 100)
 
 
-@test_mcp.tool()
+@test_mcp.tool(description="simple addition of two integers")
 async def sum(a: int, b: int, ctx: Context) -> int:
     """simple addition"""
     lqcd_logger.info("session id in sum tool: {}".format(ctx.session_id))
@@ -50,7 +51,9 @@ async def sum(a: int, b: int, ctx: Context) -> int:
 
 
 # add ecilitation test tool
-@test_mcp.tool()
+@test_mcp.tool(
+    description="interactive multiplication of two integers using elicitation."
+)
 async def interactiveMultiplication(ctx: Context) -> int:
     """Echo the input text"""
     lqcd_logger.info("session id in times tool: {}".format(ctx.session_id))
@@ -65,6 +68,18 @@ async def interactiveMultiplication(ctx: Context) -> int:
     else:
         lqcd_logger.info("User rejected the input.")
         return -1
+
+
+# add some dumb remote execution commands
+@test_mcp.tool(description="Execute a command on a remote host.")
+async def remote_exec(cmd: str, ctx: Context) -> str:
+    """Execute a command on a remote host."""
+    lqcd_logger.info("session id in remote_exec tool: {}".format(ctx.session_id))
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        lqcd_logger.error("Failed to execute command: {}".format(cmd))
+        return result.stderr
+    return result.stdout
 
 
 # Get startlette app for uvicorn
@@ -92,7 +107,7 @@ async def setup_run(proxy_url: str, port: int) -> str:
                 )
             )
             status = await register_mcp_slurm_server(proxy_url, mcp_name, mcp_url)
-            num_tries +=1
+            num_tries += 1
         if status is None:
             lqcd_logger.error("Failed to register mcp slurm server")
             exit(1)
