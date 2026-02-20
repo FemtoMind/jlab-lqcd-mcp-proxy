@@ -201,6 +201,8 @@ class LQCDMCPClient:
 
         result = await self.proxy_client.call_tool("validate_user", tool_args)
 
+        lqcd_logger.info(f"User access token: {access_token}")
+
         lqcd_logger.debug(f"Connected to Proxy. User Info: {result}")
 
         user_info_json = result.content[0].text
