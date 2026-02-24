@@ -627,7 +627,7 @@ lqcd_mcp_servers: SlurmMcpServers = lqcd_slurm_manager.mcpservers
 
 
 # Need to disable some warning messages
-slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp", log_level="error")
+slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp")
 
 
 # Velidate access token and map email or other identity
@@ -636,7 +636,7 @@ slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp", log_level="error")
     description="Validate user identity",
     tags={"auth", "token"},
 )
-async def validate_user(username: str, ctx: ServerContext):
+async def validate_user(username: str, ctx: ServerContext) -> dict:
     """Returns the authenticated proxy URL and user identity."""
     # check user name is empty or not. If it is not empty, just use it for test
     real_username = username.strip()
@@ -651,6 +651,8 @@ async def validate_user(username: str, ctx: ServerContext):
         ctx.info("Use provided username {} as local account for test.".format(username))
 
         return {"user_id": username, "user_account": username}
+
+    lqcd_logger.info("Validating user identity")
 
     # Retrieve authorization header from request
     user_login = "unknown"
@@ -761,10 +763,12 @@ async def welcome_user(ctx: ServerContext) -> str:
 
 # Return resource static information
 @slurm_mcp.resource("resource://system_info")
-async def show_computing_resources(ctx: ServerContext) -> cdata.FullSystemResource:
+async def show_computing_resources(ctx: ServerContext) -> dict:
     total_resource = await lqcd_slurm_manager.get_slurm_info()
 
-    return total_resource
+    # fastmcp version 3 cannot return any structured data.
+    # We need to return a dictionary instead.
+    return total_resource.to_json()
 
 
 # Return computing resources information
