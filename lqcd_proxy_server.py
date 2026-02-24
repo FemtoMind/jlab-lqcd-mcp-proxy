@@ -17,14 +17,20 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import Response
 from fastmcp import FastMCP, Context
+from fastmcp.utilities.logging import configure_logging as fastmcp_configure_logging
 from fastmcp.server.middleware import MiddlewareContext
 from starlette.types import Message
 import uvicorn
+import importlib.metadata
+from packaging import version
 from uvicorn.config import LOGGING_CONFIG
 
 # Our own logger
 import logging
 from lqcd_logger import lqcd_logger, setup_lqcd_file_logger, is_logging_to_file
+
+# Global settings
+import lqcd_mcp_settings
 
 # load .env file
 load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=True)
@@ -48,10 +54,28 @@ else:
 
 if _debug:
     lqcd_logger.setLevel(logging.DEBUG)
+    fastmcp_configure_logging(level=logging.DEBUG)
+    lqcd_logger.debug("Debug mode is enabled.")
 else:
     lqcd_logger.setLevel(logging.INFO)
+    fastmcp_configure_logging(level=logging.INFO)
+    lqcd_logger.info("Debug mode is disabled.")
+
 lqcd_logger.info("Loading .server_env file... done.")
 
+
+# check whether fastmcp is version 3.0.0 or higher
+def fastmcp_version_3() -> bool:
+    """Check whether fastmcp is version 3.0.0 or higher."""
+    try:
+        fastmcp_version = importlib.metadata.version("fastmcp")
+        return version.parse(fastmcp_version) >= version.parse("3.0.0")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+
+
+if fastmcp_version_3() == True:
+    lqcd_mcp_settings.is_fastmcp_version_3 = True
 
 from lqcd_mcp_main import lqcd_mcp_main, lqcd_mcp_main_app
 from lqcd_mcp_main import setup_mcp_servers
@@ -112,7 +136,8 @@ async def get_cloud_server(mcp_name: str) -> SlurmMcpServer | None:
 
 # Patch the server's listing brain
 # We override the instance method to filter tools based on tags
-_original_list = lqcd_mcp_main._list_tools
+if lqcd_mcp_settings.is_fastmcp_version_3 == False:
+    _original_list = lqcd_mcp_main._list_tools
 
 
 async def filtered_list_tools(ctx: MiddlewareContext):
@@ -121,7 +146,8 @@ async def filtered_list_tools(ctx: MiddlewareContext):
     return [t for t in all_tools if "internal" not in (t.tags or [])]
 
 
-lqcd_mcp_main._list_tools = filtered_list_tools
+if lqcd_mcp_settings.is_fastmcp_version_3 == False:
+    lqcd_mcp_main._list_tools = filtered_list_tools
 
 # Mount the main mcp server
 # Something needs to be decided on the path
