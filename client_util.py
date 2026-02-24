@@ -30,6 +30,15 @@ def _client_process_owner() -> str | None:
         return None
 
 
+# Create a custom httpx.AsyncClient factory with verify=False
+# Create a custom httpx.AsyncClient factory with verify=False
+def _insecure_httpx_client_factory(**kwargs) -> httpx.AsyncClient:
+    kwargs.setdefault("follow_redirects", True)
+    if not kwargs.get("timeout"):
+        kwargs["timeout"] = httpx.Timeout(30.0, read=300.0)
+    return httpx.AsyncClient(verify=False, **kwargs)
+
+
 # LQCD MCP client class
 # This class manages both proxy and backend clients
 # It also handles the connection to the proxy and backend servers and closing them
@@ -37,9 +46,11 @@ def _client_process_owner() -> str | None:
 class LQCDMCPClient:
     # inner class for backend client
     class BackendClient:
-        def __init__(self):
+        def __init__(self, https_connect: bool, server_self_signed_cert: bool):
             self.client_handle: Client | None = None
             self.exit_stack = AsyncExitStack()
+            self._https_connect = https_connect
+            self._server_self_signed_cert = server_self_signed_cert
 
         async def close(self):
             try:
@@ -50,8 +61,22 @@ class LQCDMCPClient:
                 self.client_handle = None
 
         async def connect(self, backend_url: str, elicitation_handler=None):
+            do_verify: bool = True
+            if self._https_connect and self._server_self_signed_cert:
+                do_verify = False
+
+            if not do_verify:
+                transport = StreamableHttpTransport(
+                    backend_url, httpx_client_factory=_insecure_httpx_client_factory
+                )
+            else:
+                transport = StreamableHttpTransport(backend_url)
+
             self.client_handle = await self.exit_stack.enter_async_context(
-                Client(backend_url, elicitation_handler=elicitation_handler)
+                Client(
+                    transport,
+                    elicitation_handler=elicitation_handler,
+                )
             )
 
         @property
@@ -66,7 +91,9 @@ class LQCDMCPClient:
         self.slurm_mcp_servers: dict[str, SlurmMcpServer] = {}
         self.exit_stack = AsyncExitStack()
         self._lock: asyncio.Lock = asyncio.Lock()
+        self._server_self_signed_cert = False
         self._trust_client = False
+        self._https_connect = self.proxy_url.startswith("https://")
 
         # set up run environment
         self.jlab_run = False
@@ -77,17 +104,34 @@ class LQCDMCPClient:
 
         self.debug = os.getenv("DEBUG", "false").lower() == "true"
 
+        # check whether server use self-signed cert
+        self._server_self_signed_cert = (
+            os.getenv("SERVER_SELF_SIGNED_CERT", "false").lower() == "true"
+        )
+        lqcd_logger.info(
+            "Server is using self-signed cert: {}".format(self._server_self_signed_cert)
+        )
+
+        # If my server is using self-signed cert, I need to set verify=False
+        # Otherwise, I need to set verify=True
+        if self._https_connect and self._server_self_signed_cert:
+            http_client = httpx.Client(verify=False)
+        else:
+            http_client = httpx.Client()
+
         if self.jlab_run == False:
             lqcd_logger.info("MCP Application is running in an open environment.")
             self.openai = OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=os.getenv("OPENROUTER_API_KEY"),
+                http_client=http_client,
             )
         else:
             lqcd_logger.info("MCP Application is running inside Jlab.")
             self.openai = OpenAI(
                 base_url="https://llm-vm1.jlab.org/api/v1/",
                 api_key=os.getenv("JLAB_LLM_KEY"),
+                http_client=http_client,
             )
 
         # Set LLM model
@@ -100,7 +144,11 @@ class LQCDMCPClient:
 
     # Authenticate to OIDC provider
     async def __login(self) -> str | None:
-        async with httpx.AsyncClient() as client:
+        do_verify: bool = True
+        if self._https_connect and self._server_self_signed_cert:
+            do_verify = False
+
+        async with httpx.AsyncClient(verify=do_verify) as client:
             # 1. Ask Proxy for the login link and code
             res = (await client.post(f"{self.proxy_url}/auth/device-code")).json()
 
@@ -178,6 +226,9 @@ class LQCDMCPClient:
                 "url": self.proxy_mcp_url,
                 "headers": {"Authorization": f"Bearer {access_token}"},
             }
+
+        if self._https_connect and self._server_self_signed_cert:
+            client_args["httpx_client_factory"] = _insecure_httpx_client_factory
 
         lqcd_logger.info(f"Connecting to Proxy at: {self.proxy_mcp_url}")
 
@@ -484,7 +535,9 @@ class LQCDMCPClient:
         # 3. Connect to Backend (while keeping Proxy connection alive)
         lqcd_logger.debug(f"Connecting to Backend at: {backend_url}")
         try:
-            backend_client = LQCDMCPClient.BackendClient()
+            backend_client = LQCDMCPClient.BackendClient(
+                self._https_connect, self._server_self_signed_cert
+            )
             await backend_client.connect(backend_url, elicitation_handler)
         except Exception as e:
             lqcd_logger.error(
