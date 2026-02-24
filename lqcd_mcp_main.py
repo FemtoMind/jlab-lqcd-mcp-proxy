@@ -5,8 +5,9 @@ import argparse
 import asyncio
 import uvicorn
 from fastmcp import FastMCP
-from fastmcp.server.context import Context as ServerContext
 from lqcd_logger import lqcd_logger
+import lqcd_mcp_settings
+
 
 # Import our servers here
 from slurm_mcp_server import slurm_mcp
@@ -22,7 +23,12 @@ lqcd_mcp_main_app = lqcd_mcp_main.http_app(
 
 # Import other mcp servers and mount them
 async def setup_mcp_servers():
-    await lqcd_mcp_main.import_server(slurm_mcp)
+    if lqcd_mcp_settings.is_fastmcp_version_3:
+        lqcd_logger.info("Using fastmcp version 3.0.0 or higher")
+        lqcd_mcp_main.mount(slurm_mcp)
+    else:
+        lqcd_logger.info("Using fastmcp version lower than 3.0.0")
+        await lqcd_mcp_main.import_server(slurm_mcp)
 
 
 # Main entry point
