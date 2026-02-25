@@ -1,0 +1,17 @@
+# SLURM setting
+MCP_USE_JLAB_SLURM=true
+# OIDC setting file
+LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
+#LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
+# Convert user id to local account mapping file
+LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
+#LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
+# Use https
+# USE_HTTPS=true
+# SSL CERT and Key File
+PROXY_CERT_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/cert.pem
+PROXY_KEY_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
+# Log file
+PROXY_LOG_FILE=/usr/local/lqcd_proxy/server.log
+# Debug mode
+# DEBUG=true

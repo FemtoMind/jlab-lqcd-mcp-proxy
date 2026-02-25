@@ -1,17 +1,17 @@
 # OpenRouter API Key used as OpenAI API Key
-OPENROUTER_API_KEY=
-OPENROUTER_API_KEY_JLAB=
+OPENROUTER_API_KEY=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
+OPENROUTER_API_KEY_JLAB=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
 # LLM Model
 LLM_MODEL=google/gemini-2.5-flash
 # MCP Run Environment
-#MCP_RUN_ENV=JLAB
-MCP_RUN_ENV=global
+MCP_RUN_ENV=JLAB
+# MCP_RUN_ENV=global
 # JLab LLM Key
-JLAB_LLM_KEY=
+JLAB_LLM_KEY=sk-EUalQrC8Idnp5_1iYYfAWA
 JLAB_LLM_MODEL=openai/gpt-oss-120b
 # Server use self-signed cert (local test only)
 # SERVER_SELF_SIGNED_CERT=true
 # Trust client without authentication (local test only)
-# TRUST_CLIENT=true
+#TRUST_CLIENT=true
 # Debug mode
 DEBUG=true
