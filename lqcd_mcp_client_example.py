@@ -125,9 +125,18 @@ async def main():
     max_retries = 20
     while server_status != "RUNNING" and num_retries < max_retries:
         await asyncio.sleep(5)
+        lqcd_logger.info(
+            f"Checking with Proxy server to see if backend server {args.mcp_name} is ready..."
+        )
         server_status = await client_manager.backend_mcp_server_status(args.mcp_name)
         lqcd_logger.info(f"Backend MCP server {args.mcp_name} status: {server_status}")
         num_retries += 1
+
+        if server_status == "NOT_REGISTERED":
+            lqcd_logger.error(
+                f"Backend MCP server {args.mcp_name} is not registered. Please check it manually."
+            )
+            exit(1)
 
     if server_status != "RUNNING":
         lqcd_logger.error(
