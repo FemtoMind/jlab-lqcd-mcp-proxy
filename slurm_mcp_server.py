@@ -398,8 +398,8 @@ class SlurmSpawner:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            job_state = result.stdout.read().strip()
             result.wait()
+            job_state = result.stdout.read().strip()
         except Exception as e:
             lqcd_logger.error(f"Failed to check slurm job: {e}")
             return None
@@ -951,7 +951,7 @@ async def check_mcp_server_status(
     job_state = await lqcd_slurm_manager.check_slurm_job_state(str(job_id))
     if job_state == "RUNNING" and backend_mcp_server.url == "":
         # Not updating the state
-        pass
+        backend_mcp_server.slurm_job_state = "NOT_REGISTERED"
     else:
         backend_mcp_server.slurm_job_state = job_state
 
@@ -965,12 +965,18 @@ async def check_mcp_server_status(
         backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
             job_id
         )
-        # Make sure the backend server has been registered
-        while backend_mcp_server.slurm_job_state != "RUNNING":
+        # Make sure the backend server has been registered, wait for 40 seconds
+        num_retries = 0
+        max_retries = 20
+        while (
+            backend_mcp_server.slurm_job_state != "RUNNING"
+            and num_retries < max_retries
+        ):
             await asyncio.sleep(2)
             backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
                 job_id
             )
+            num_retries += 1
 
         # This should never happen
         if backend_mcp_server is None:
@@ -983,6 +989,26 @@ async def check_mcp_server_status(
             return cdata.SlurmMcpServer(
                 slurm_job_id=job_id,
                 error_message="Cannot find mcp server associated with this jobid {}".format(
+                    job_id
+                ),
+                valid=False,
+            )
+        elif (
+            backend_mcp_server.slurm_job_state != "RUNNING"
+            and num_retries >= max_retries
+        ):
+            lqcd_logger.error(
+                "This jobid {} has problem register itself. Please check it manually.".format(
+                    job_id
+                )
+            )
+            # remove the server from the list
+            await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(job_id)
+
+            return cdata.SlurmMcpServer(
+                slurm_job_state="NOT_REGISTERED",
+                slurm_job_id=job_id,
+                error_message="This jobid {} has problem register itself. Please check it manually.".format(
                     job_id
                 ),
                 valid=False,
