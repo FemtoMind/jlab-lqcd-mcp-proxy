@@ -501,6 +501,12 @@ class LQCDMCPClient:
 
         # Wait for the server to be ready
         server_status = await self.backend_mcp_server_status(mcp_name)
+        if server_status == "NOT_REGISTERED":
+            lqcd_logger.error(
+                f"Server {mcp_name} is not registered. Please check it manually."
+            )
+            return None
+
         while server_status != "RUNNING" and timeout > 0:
             lqcd_logger.info(
                 f"Server {mcp_name} is not running. Waiting for it to be ready."
