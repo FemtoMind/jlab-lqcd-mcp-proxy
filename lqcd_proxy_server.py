@@ -161,7 +161,7 @@ proxy_app.mount("/jlab", lqcd_mcp_main_app)
 # Get all backend servers
 @proxy_app.get("/server")
 async def get_cloud_servers():
-    return lqcd_mcp_servers.get_all_slurm_mcp_servers()
+    return await lqcd_mcp_servers.get_all_slurm_mcp_servers()
 
 
 # curl -X 'POST' \
@@ -246,15 +246,11 @@ def get_session_id_from_request(request: Request) -> str | None:
 @proxy_app.middleware("http")
 async def request_middleware(request: Request, call_next):
     start_time = time.time()
-    """
+
     # Log request details
     lqcd_logger.debug(
         f"-> Request: {request.method} {request.url.path} from {request.client.host}"
     )
-
-    json_body = await request.json()
-    lqcd_logger.debug("request json = {}".format(json_body))
-    """
 
     # Need to check the above three things to find out whether there is session id
     if request.method == "DELETE":
@@ -287,13 +283,32 @@ async def request_middleware(request: Request, call_next):
                 await lqcd_session_manager().cleanup(session_id)
 
     # Process the request
-    response = await call_next(request)
+    has_error = False
+    try:
+        response = await call_next(request)
+    except asyncio.CancelledError:
+        lqcd_logger.error("Request cancelled")
+        response = Response("Request cancelled", status_code=499)
+        has_error = True
+    except Exception as e:
+        lqcd_logger.error("Request failed: {}".format(e))
+        response = Response("Request failed", status_code=500)
+        has_error = True
+
     process_time = time.time() - start_time
 
     # Log response details
     lqcd_logger.info(
         f"<- Response: {request.method} {request.url.path} returned {response.status_code} in {process_time:.4f}s"
     )
+
+    if has_error:
+        session_id = get_session_id_from_request(request)
+        if session_id and await lqcd_session_manager().session_exists(session_id):
+            lqcd_logger.info(
+                f"Cleaning up jlab proxy server data for session id: {session_id}"
+            )
+            await lqcd_session_manager().cleanup(session_id)
 
     return response
 
