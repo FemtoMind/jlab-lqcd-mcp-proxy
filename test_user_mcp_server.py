@@ -97,6 +97,11 @@ async def setup_run(proxy_url: str, port: int) -> str:
     if not job_id is None:
         hostname, ip_address = get_hostname_and_ip_address()
         mcp_url = f"http://{ip_address}:{port}/mcp"
+        lqcd_logger.info(
+            "Registering mcp slurm server {} to proxy server {} using url {}".format(
+                mcp_name, proxy_url, mcp_url
+            )
+        )
         status = await register_mcp_slurm_server(proxy_url, mcp_name, mcp_url)
         num_tries: int = 0
         while status is None and num_tries < 10:
@@ -120,7 +125,7 @@ async def setup_run(proxy_url: str, port: int) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LQCD MCP Test Server")
     parser.add_argument(
-        "--port", type=int, default=8123, help="Localhost port to listen on"
+        "--port", type=int, default=8080, help="Localhost port to listen on"
     )
     parser.add_argument(
         "--proxy-url",
