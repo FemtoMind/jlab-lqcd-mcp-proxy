@@ -25,7 +25,7 @@ class AnsiColorFormatter(logging.Formatter):
             "DEBUG": bold,
         }.get(record.levelname, no_style)
         end_style = no_style
-        record.levelname = f"{start_style}{record.levelname}{end_style}"
+        record.levelname = f"{start_style}{record.levelname:8s}{end_style}"
         record.msg = f"{msg_style}{record.msg}{end_style}"
         return f"{super().format(record)}"
 
@@ -42,11 +42,16 @@ stream_handler.setLevel(logging.DEBUG)
 # Create a formatter and set it for the handler
 # separator style formatting
 sep = ":"
+wspace = " "
 fancy_formatter = AnsiColorFormatter(
-    f"{{levelname}}{sep:<5s} {{name:<10s}}| {{message}}", style="{"
+    fmt=f"{{levelname}}{sep:<2s}{{name:<7s}}| {{message}}",
+    datefmt="%m/%d/%y %H:%M:%S",
+    style="{",
 )
 simple_formatter = SimpleFormatter(
-    f"{{levelname}}{sep:<5s} {{name:<10s}}| {{message}}", style="{"
+    fmt=f"{{asctime}}{wspace}{{levelname:8s}}{sep:<2s}{{name:<7s}}| {{message}}",
+    datefmt="%m/%d/%y %H:%M:%S",
+    style="{",
 )
 
 if stream_handler.stream.isatty():
