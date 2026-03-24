@@ -3,7 +3,16 @@ import logging
 from logging.handlers import RotatingFileHandler
 import sys
 
+# add filter to filter out local monitoring tool such as Prometheus
+# checking /metrics
 
+class FilterLocalMonitoring(logging.Filter):
+    def filter(self, record):
+        # ignore message checking /metrics
+        if record.getMessage().find("GET /metrics") == -1 :
+            return True
+        return False
+    
 class AnsiColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord):
         no_style = "\033[0m"
@@ -81,6 +90,8 @@ def setup_lqcd_file_logger(file_name: str):
     # or just add file handler. User wants file logging.
     lqcd_logger.handlers.clear()
     lqcd_logger.addHandler(file_handler)
+    # add filter
+    lqcd_logger.addFilter(FilterLocalMonitoring())
     lqcd_logger.propagate = False  # Prevent bubbling up to root, fixing duplication
 
     # 2. Root Logger Setup (for all other libraries)
@@ -97,6 +108,8 @@ def setup_lqcd_file_logger(file_name: str):
         logger.setLevel(logging.INFO)  # Ensure it captures standard traffic
         logger.handlers.clear()
         logger.addHandler(file_handler)
+        # add the same filter
+        logger.addFilter(FilterLocalMonitoring())
         logger.propagate = False  # Don't bubble up to root (which also has the handler)
 
 
