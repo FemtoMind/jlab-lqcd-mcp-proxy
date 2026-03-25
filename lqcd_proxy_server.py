@@ -86,13 +86,75 @@ from session_manager import lqcd_session_manager
 # Data class to define backend serve url
 from common_data import SlurmMcpServer
 
-# Global backend servers: server id -> backend server
-from slurm_mcp_server import lqcd_mcp_servers
+from contextlib import asynccontextmanager
+from slurm_mcp_server import lqcd_mcp_servers, lqcd_slurm_manager
+
+
+# Scan slurm jobs every 60 seconds
+async def scan_slurm_jobs():
+    """Background task running every 60 seconds to scan slurm jobs."""
+    # Add any setup before the loop if needed
+    lqcd_logger.info(
+        "Starting periodic background task (every 60 seconds) to scan slurm jobs."
+    )
+    while True:
+        try:
+            await asyncio.sleep(60)
+            # scan all available slurm jobs to see whether they are still running
+            # if not running, remove them from the map
+            lqcd_logger.debug("Scanning slurm jobs...")
+            await lqcd_slurm_manager.scan_slurm_jobs()
+        except asyncio.CancelledError:
+            lqcd_logger.info("Slurm job scanning task cancelled during shutdown.")
+            break
+        except Exception as e:
+            lqcd_logger.error(f"Error in slurm job scanning task: {e}")
+            await asyncio.sleep(60)
+
+
+# Eventual task to check idel clients and close them
+async def check_idle_clients():
+    """Another background task running every 10 seconds."""
+    lqcd_logger.info("Starting background task to check idel clients.")
+    while True:
+        try:
+            # Your 10s logic here
+            await asyncio.sleep(300)
+        except asyncio.CancelledError:
+            lqcd_logger.info("Idle client checking task cancelled during shutdown.")
+            break
+        except Exception as e:
+            lqcd_logger.error(f"Error in idle client checking task: {e}")
+            await asyncio.sleep(300)
+
+
+@asynccontextmanager
+async def proxy_app_lifespan(app):
+    """Custom lifespan to attach our background tasks alongside FastMCP's."""
+    async with lqcd_mcp_main_app.router.lifespan_context(app):
+        # Now the event loop is ready; launch periodic background task
+        scan_slurm_task = asyncio.create_task(scan_slurm_jobs())
+        # check_idle_clients_task = asyncio.create_task(check_idle_clients())
+        try:
+            yield
+        finally:
+            scan_slurm_task.cancel()
+            # check_idle_clients_task.cancel()
+
+            try:
+                await asyncio.gather(
+                    scan_slurm_task,
+                    # check_idle_clients_task,
+                    return_exceptions=True,
+                )
+            except asyncio.CancelledError:
+                pass
+
 
 # Initialize FastAPI app
 proxy_app = FastAPI(
     title="Jefferson Lab LQCD MCP FastAPI Dynamic Proxy Server",
-    lifespan=lqcd_mcp_main_app.router.lifespan_context,
+    lifespan=proxy_app_lifespan,
 )
 security = HTTPBearer()
 
