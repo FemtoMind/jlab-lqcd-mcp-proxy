@@ -388,6 +388,59 @@ class SlurmSpawner:
             )
         return sjob
 
+    # Scan states of a list of jobs
+    async def scan_slurm_jobs(self):
+        """Scan the status of all slurm jobs."""
+        # get all slurm jobs
+        slurm_servers = await self.slurm_mcp_servers.get_all_slurm_mcp_servers()
+        if len(slurm_servers) == 0:
+            return
+
+        job_ids = [server.slurm_job_id for server in slurm_servers]
+        job_ids_str = ",".join(map(str, job_ids))
+        command = "squeue --jobs=" + job_ids_str + " --format='%A %T' -h"
+        try:
+            result = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=True,
+            )
+            # read line one after another
+            job_states: dict[int, str] = {}
+            for line in result.stdout:
+                tokens = line.strip().split()
+                if len(tokens) == 2:
+                    job_states[int(tokens[0])] = tokens[1]
+            # wait for the process to complete
+            result.wait()
+        except Exception as e:
+            lqcd_logger.error(f"Failed to check slurm jobs: {e}")
+
+        # update slurm job states
+        removed_servers = []
+        for server in slurm_servers:
+            if server.slurm_job_id in job_states:
+                server.slurm_job_state = job_states[server.slurm_job_id]
+                lqcd_logger.debug(
+                    f"Updated slurm job {server.slurm_job_id} state to {server.slurm_job_state}"
+                )
+            else:
+                removed_servers.append(server)
+                lqcd_logger.debug(
+                    f"Slurm job {server.slurm_job_id} is not found in job_states"
+                )
+
+        # remove servers that are not in job_states
+        for server in removed_servers:
+            lqcd_logger.warning(f"Removing a finished slurm job {server.slurm_job_id}")
+            await self.slurm_mcp_servers.remove_slurm_mcp_server_by_jobid(
+                server.slurm_job_id
+            )
+
+        return job_states
+
     # Just check a job state
     async def check_slurm_job_state(self, job_id: str) -> str | None:
         """Check the status of a slurm job."""
@@ -624,7 +677,6 @@ Create a global slurm mcp server
 """
 lqcd_slurm_manager: SlurmSpawner = SlurmSpawner()
 lqcd_mcp_servers: SlurmMcpServers = lqcd_slurm_manager.mcpservers
-
 
 # Need to disable some warning messages
 slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp")
@@ -1648,5 +1700,4 @@ if __name__ == "__main__":
     batch_mcp_app = slurm_mcp.http_app(
         path="/mcp", json_response=False, stateless_http=False, transport="http"
     )
-
     uvicorn.run(batch_mcp_app, host="0.0.0.0", port=args.port)
