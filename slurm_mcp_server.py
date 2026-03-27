@@ -25,6 +25,7 @@ from session_manager import lqcd_session_manager
 
 from fastmcp import FastMCP
 from fastmcp.server.context import Context as ServerContext
+from fastmcp.server.dependencies import get_context
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 # import token validation helper
@@ -828,12 +829,11 @@ async def show_computing_resources(ctx: ServerContext) -> dict:
     description="Provide slurm project account information and computing resources available at Jlab.",
     tags={"slurm", "resource", "Jlab"},
 )
-async def get_user_slurm_accounts(
-    ctx: ServerContext,
-) -> cdata.UserComputingAccounts:
+async def get_user_slurm_accounts(unused: str = "") -> cdata.UserComputingAccounts:
     """Return information about user slurm project account names and total computing resources
     auch as partitions, nodes, cpus, memory, etc.
     """
+    ctx = get_context()
     sid = ctx.session_id
 
     user = await lqcd_session_manager().get_resource(sid, "username")
@@ -1217,9 +1217,10 @@ async def cancel_mcp_server_by_name(
     """,
     tags={"slurm", "Jlab"},
 )
-async def number_of_idle_nodes(ctx: ServerContext) -> int:
+async def number_of_idle_nodes(unused: str = "") -> int:
     """Return the number of idle computing nodes at Jlab so the client can decide
     whether to launch an mcp server by submitting a slurm job."""
+    ctx = get_context()
     system_info = await lqcd_slurm_manager.get_slurm_info()
     idle_nodes: int = 0
     for partition in system_info.partitions:
@@ -1473,6 +1474,49 @@ async def epilogue_mcp_slurm_server(
 
     # return the backend mcp server
     return backend_mcp_server
+
+
+# Return all available mcp servers for a logged user
+@slurm_mcp.tool(
+    description="""
+    Get all available mcp slurm servers created by the logged in user.
+    """,
+    tags={"slurm", "Jlab"},
+)
+async def get_my_mcp_slurm_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
+    """Get all available mcp slurm servers created or launch by a user."""
+    # Get user name
+    ctx = get_context()
+    user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
+    if user is None:
+        ctx.error("Cannot find username associated with this session.")
+        lqcd_logger.error("Cannot find username associated with this session.")
+        return []
+    # Get all available mcp slurm servers
+    mcp_slurm_servers = await lqcd_mcp_servers.get_slurm_mcp_servers_by_owner(user)
+    return mcp_slurm_servers
+
+
+# Return all available mcp servers on the system
+@slurm_mcp.tool(
+    description="""
+    Get all available mcp slurm servers created on the system.
+    """,
+    tags={"slurm", "Jlab"},
+)
+async def get_all_mcp_slurm_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
+    """Get all available mcp slurm servers on the system."""
+    # Get user name even though we don't use it, but we have to make sure
+    # This used is authenticated
+    ctx = get_context()
+    user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
+    if user is None:
+        ctx.error("Cannot find username associated with this session.")
+        lqcd_logger.error("Cannot find username associated with this session.")
+        return []
+    # Get all available mcp slurm servers
+    mcp_slurm_servers = await lqcd_mcp_servers.get_all_slurm_mcp_servers()
+    return mcp_slurm_servers
 
 
 # Launch MCP Server on Slurm or Cloud
