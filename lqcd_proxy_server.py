@@ -54,11 +54,19 @@ else:
 
 if _debug:
     lqcd_logger.setLevel(logging.DEBUG)
-    fastmcp_configure_logging(level=logging.DEBUG)
+    if is_logging_to_file():
+        logging.getLogger("fastmcp").setLevel(logging.DEBUG)
+        logging.getLogger("mcp").setLevel(logging.DEBUG)
+    else:
+        fastmcp_configure_logging(level=logging.DEBUG)
     lqcd_logger.debug("Debug mode is enabled.")
 else:
     lqcd_logger.setLevel(logging.INFO)
-    fastmcp_configure_logging(level=logging.INFO)
+    if is_logging_to_file():
+        logging.getLogger("fastmcp").setLevel(logging.INFO)
+        logging.getLogger("mcp").setLevel(logging.INFO)
+    else:
+        fastmcp_configure_logging(level=logging.INFO)
     lqcd_logger.info("Debug mode is disabled.")
 
 lqcd_logger.info("Loading .server_env file... done.")
