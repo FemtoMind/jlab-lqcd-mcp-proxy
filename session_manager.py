@@ -50,7 +50,50 @@ class SessionManager:
         async with self._lock:
             session_resources = self._sessions.get(session_id, {})
             return session_resources.get(resource_name, None)
+        
+    async def unregister(self, session_id: str, resource_name: str):
+        """Unregister a specific resource from a session."""
+        async with self._lock:
+            lqcd_logger.info(
+                f"🧹 [Manager] Unregistering '{resource_name}' from session {session_id}..."
+            )
+            if session_id in self._sessions and resource_name in self._sessions[session_id]:
+                # --- CUSTOM CLEANUP LOGIC HERE ---
+                # Example: Close a mock database connection
+                # lqcd_logger.info(f"   -> Closing '{resource_name}' for session {session_id}...")
+                # ---------------------------------
+                del self._sessions[session_id][resource_name]
+                lqcd_logger.info(
+                    f"✅ [Manager] Unregistered '{resource_name}' from session {session_id}"
+                )
+            else:
+                lqcd_logger.warning(
+                    f"⚠️  [Manager] Resource '{resource_name}' not found for session {session_id}"
+                )
+        
+    # clean up a particular resource for all sessions
+    # useful for cleaning up shared resources like a connection pool
+    async def cleanup_resource_all_sessions(self, resource_name: str):
+        async with self._lock:
+            lqcd_logger.info(f"🧹 [Manager] Cleaning up resource '{resource_name}' for all sessions...")
+            for session_id, resources in self._sessions.items():
+                if resource_name in resources:
+                    # --- CUSTOM CLEANUP LOGIC HERE ---
+                    # Example: Close a mock database connection
+                    # lqcd_logger.info(f"   -> Closing '{resource_name}' for session {session_id}...")
+                    # ---------------------------------
+                    del resources[resource_name]
+            lqcd_logger.info(f"✨ [Manager] Resource '{resource_name}' cleaned up for all sessions.")
 
+    # Remove a specific resource from all sessions which contains a set of values, e.g., a list of connected backend servers. This is useful for cleaning up the session state on UI when a backend server is removed from the system.
+    async def remove_resource_all_sessions_set(self, resource_name: str, value):
+        async with self._lock:
+            lqcd_logger.info(f"🧹 [Manager] Removing value '{value}' from resource '{resource_name}' for all sessions...")
+            for session_id, resources in self._sessions.items():
+                if resource_name in resources and isinstance(resources[resource_name], set):
+                    resources[resource_name].discard(value)
+            lqcd_logger.info(f"✨ [Manager] Value '{value}' removed from resource '{resource_name}' for all sessions.")
+    
     async def cleanup(self, session_id: str):
         """
         Idempotent cleanup. Safe to call multiple times.

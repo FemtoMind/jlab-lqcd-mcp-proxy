@@ -430,28 +430,14 @@ class LQCDMCPClient:
             return self.slurm_mcp_servers[mcp_name]
 
         if local_file == True:
-            # check local file here
-            if not os.path.exists(filename):
-                lqcd_logger.error(f"Local file {filename} does not exist.")
-                return backend_mcp_server
-
-            # check local file is readable
-            if not os.access(filename, os.R_OK):
-                lqcd_logger.error(f"Local file {filename} is not readable.")
-                return backend_mcp_server
-
-            # read file content
-            with open(filename, "r") as f:
-                submission_script = f.read()
-
-            tool_name = "launch_mcp_server_on_slurm_with_script"
+            tool_name = "launch_mcp_server_using_local_file"
             tool_args = {
                 "mcp_name": mcp_name,
                 "wait": wait,
-                "submission_script": submission_script,
+                "local_script_file": filename,
             }
         else:
-            tool_name = "launch_mcp_server_on_slurm_with_script_file"
+            tool_name = "launch_mcp_server_using_remote_file"
             tool_args = {"mcp_name": mcp_name, "wait": wait, "script_file": filename}
 
         result = await self.proxy_client.call_tool(tool_name, tool_args)

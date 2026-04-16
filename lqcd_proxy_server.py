@@ -286,7 +286,6 @@ from lqcd_oidc_auth import read_oidc_auth_info, load_user_account_mapping
 # include the auth router
 proxy_app.include_router(auth_router, prefix="", tags=["auth"])
 
-
 # Get session id from a request
 def get_session_id_from_request(request: Request) -> str | None:
     """Extract session id from the request headers or query parameters."""
@@ -422,7 +421,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     # Extract context to pass to the backend (e.g., from Proxy Auth)
     # This will be used to inject user information into the MCP protocol  ***
     # Need more discussion on this ***
-    user_context = {"user_id": f"id_{mcp_name}", "authenticated_by": "FastAPI-Proxy"}
+    user_context = {"connection_id": f"id_{mcp_name}", "authenticated_by": "jlab-proxy"}
 
     # Handle JSON-RPC Body Injection
     # Make sure to remove host and content-length headers,
@@ -485,7 +484,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             status_code=status,
             headers={"Content-Type": "application/json"},
         )
-
+    
     # generate a response stream used to construct StreamingResponse
     # This is used to check whether the stream from proxy to the backend is broken
     async def _proxy_response_stream(rp_resp: httpx.Response, mcp_name: str):
@@ -497,6 +496,11 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             # remove this mcp server from the cloud server list
             await delete_cloud_server(mcp_name)
             lqcd_logger.info(f"Backend {mcp_name} removed from cloud server list")
+            # clean up all sessions that are connected to this backend server
+            # This happens when the backend server is crashed, so we need to clean up the session 
+            # state on UI by removing the backend server from the session resource "connected_servers". 
+            # This will make sure the UI can reflect the correct state of connections.
+            await lqcd_session_manager().remove_resource_all_sessions_set("connected_servers", mcp_name)
         except Exception as e:
             lqcd_logger.error(f"Backend {mcp_name} streaming error: {e}")
             # We cannot change the status code here as the headers are already sent.

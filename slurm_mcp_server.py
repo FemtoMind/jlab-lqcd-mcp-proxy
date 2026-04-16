@@ -12,6 +12,7 @@
 # The mcp server can be only used by the same user who launched it.
 import argparse
 
+import base64
 import subprocess
 import asyncio
 import os
@@ -436,9 +437,14 @@ class SlurmSpawner:
         # remove servers that are not in job_states
         for server in removed_servers:
             lqcd_logger.warning(f"Removing a finished slurm job {server.slurm_job_id}")
+            # Need to remve the backeend server from connected servers resource of all sessions
+            await lqcd_session_manager().remove_resource_all_sessions_set("connected_servers", server.mcp_name)
+
+            # Then remove the server from the server manager
             await self.slurm_mcp_servers.remove_slurm_mcp_server_by_jobid(
                 server.slurm_job_id
             )
+
 
         return job_states
 
@@ -691,6 +697,8 @@ slurm_mcp = FastMCP(name="jlab_lqcd_slurm_mcp")
 )
 async def validate_user(username: str, ctx: ServerContext) -> dict:
     """Returns the authenticated proxy URL and user identity."""
+    sid = ctx.session_id
+
     # check user name is empty or not. If it is not empty, just use it for test
     real_username = username.strip()
     if len(real_username) > 0:
@@ -1483,7 +1491,7 @@ async def epilogue_mcp_slurm_server(
     """,
     tags={"slurm", "Jlab"},
 )
-async def get_my_mcp_slurm_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
+async def get_my_mcp_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
     """Get all available mcp slurm servers created or launch by a user."""
     # Get user name
     ctx = get_context()
@@ -1504,7 +1512,7 @@ async def get_my_mcp_slurm_servers(unused: str = "") -> list[cdata.SlurmMcpServe
     """,
     tags={"slurm", "Jlab"},
 )
-async def get_all_mcp_slurm_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
+async def get_all_mcp_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
     """Get all available mcp slurm servers on the system."""
     # Get user name even though we don't use it, but we have to make sure
     # This used is authenticated
@@ -1544,17 +1552,8 @@ async def launch_mcp_server(
     return mcp_server
 
 
-# Launch MCP Server on Slurm using a complete slurm submission script
-# Now we just return slurm backend server information
-@slurm_mcp.tool(
-    description="""
-    Launch an MCP Server on Slurm cluster at Jlab using a complete slurm submission script. 
-    The MCP name is the same as the job name which is specified inside the script.
-    The server will be registered with the Proxy server.
-    """,
-    tags={"slurm", "Jlab"},
-)
-async def launch_mcp_server_on_slurm_with_script(
+# Really launch a backend mcp server on slurm which is called by server tools
+async def launch_mcp_server_script_on_slurm(
     mcp_name: str, wait: bool, submission_script: str, ctx: ServerContext
 ) -> cdata.SlurmMcpServer:
     """User launch a mcp server on slurm using a complete slurm submission script."""
@@ -1629,19 +1628,112 @@ async def launch_mcp_server_on_slurm_with_script(
     return mcp_server
 
 
+# Launch MCP Server on Slurm using a complete slurm submission script
+# Now we just return slurm backend server information
+@slurm_mcp.tool(
+    description="""
+    Launch an MCP Server on Slurm cluster at Jlab using a complete slurm submission script in string format. 
+    The MCP name is the same as the job name which is specified inside the script.
+    The server will be registered with the Proxy server. If base64_content is true, the submission 
+    script will be decoded from base64 string.
+    """,
+    tags={"slurm", "Jlab"},
+)
+async def launch_mcp_server_using_script(
+    mcp_name: str, wait: bool, submission_script: str, base64_content: bool, ctx: ServerContext
+) -> cdata.SlurmMcpServer:
+    """User launch a mcp server on slurm using a complete slurm submission script."""
+    if base64_content:
+        try:
+            # convert to string if it is bytes
+            submission_script = base64.b64decode(submission_script).decode('utf-8')
+        except Exception as e:
+            lqcd_logger.error(f"Failed to decode base64 script: {e}")
+            ctx.error(f"Failed to decode base64 script: {e}")
+            backend_mcp_server = cdata.SlurmMcpServer(
+                mcp_name="N/A",
+                url="",
+                owner="",
+                slurm_job_id=-1,
+                slurm_job_name="N/A",
+                slurm_job_state="UNKNOWN",
+                error_message=f"Failed to decode base64 script: {e}",
+                valid=False,
+            )
+            return backend_mcp_server
+    mcp_server = await launch_mcp_server_script_on_slurm(
+        mcp_name, wait, submission_script, ctx
+    )
+    return mcp_server
+
+
+# Launch MCP Server on Slurm using a local slurm submission script file
+# Now we just return slurm backend server information
+@slurm_mcp.tool(
+    description="""
+    Launch an MCP Server on Slurm cluster at Jlab using a local slurm script file that is on the local 
+    machine such as your laptop you are running now.
+    The MCP name is the same as the job name which is specified inside the script.
+    The server will be registered with the Proxy server.
+    """,
+    tags={"slurm", "Jlab"},
+)
+async def launch_mcp_server_using_local_file(
+    mcp_name: str, wait: bool, local_script_file: str, ctx: ServerContext
+) -> cdata.SlurmMcpServer:
+    # empty backend mcp server
+    backend_mcp_server = cdata.SlurmMcpServer(
+        mcp_name="N/A",
+        url="",
+        owner="",
+        slurm_job_id=-1,
+        slurm_job_name="N/A",
+        slurm_job_state="UNKNOWN",
+        error_message="",
+        valid=False,
+    )
+
+    # Check file is available and readable
+    if not os.path.exists(local_script_file):
+        ctx.error("Script file {} does not exist.".format(local_script_file))
+        lqcd_logger.error("Script file {} does not exist.".format(local_script_file))
+        backend_mcp_server.error_message = "Script file {} does not exist.".format(
+            local_script_file
+        )
+        return backend_mcp_server
+
+    if not os.access(local_script_file, os.R_OK):
+        ctx.error("Script file {} is not readable.".format(local_script_file))
+        lqcd_logger.error("Script file {} is not readable.".format(local_script_file))
+        backend_mcp_server.error_message = "Script file {} is not readable.".format(
+            local_script_file
+        )
+        return backend_mcp_server
+
+    # Read the script file
+    with open(local_script_file, "r") as f:
+        submission_script = f.read()
+
+    # Launch the backend mcp server
+    mcp_server = await launch_mcp_server_script_on_slurm(
+        mcp_name, wait, submission_script, ctx
+    )
+    return mcp_server
+
+
 # Launch MCP Server on Slurm using a complete slurm submission file that
 # is available on the machine where the proxy server is running.
 # Now we just return slurm backend server information
 @slurm_mcp.tool(
     description="""
     Launch an MCP Server on Slurm cluster at Jlab using a complete slurm submission file
-    which is available on the machine where the proxy server is running. 
+    that is on the machine where the proxy server is running. 
     The MCP name is the same as the job name which is specified inside the script.
     The server will be registered with the Proxy server.
     """,
     tags={"slurm", "Jlab"},
 )
-async def launch_mcp_server_on_slurm_with_script_file(
+async def launch_mcp_server_using_remote_file(
     mcp_name: str, wait: bool, script_file: str, ctx: ServerContext
 ) -> cdata.SlurmMcpServer:
     """User launch a mcp server on slurm using a complete slurm submission file."""
@@ -1729,6 +1821,9 @@ async def launch_mcp_server_on_slurm_with_script_file(
     )
     return mcp_server
 
+
+# import UI part of the server
+import slurm_mcp_server_ui
 
 # Finally main entry point
 if __name__ == "__main__":
