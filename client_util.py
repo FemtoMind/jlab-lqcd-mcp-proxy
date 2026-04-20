@@ -430,11 +430,27 @@ class LQCDMCPClient:
             return self.slurm_mcp_servers[mcp_name]
 
         if local_file == True:
-            tool_name = "launch_mcp_server_using_local_file"
+            # check local file here
+            if not os.path.exists(filename):
+                lqcd_logger.error(f"Local file {filename} does not exist.")
+                return backend_mcp_server
+
+            # check local file is readable
+            if not os.access(filename, os.R_OK):
+                lqcd_logger.error(f"Local file {filename} is not readable.")
+                return backend_mcp_server
+
+            # read file content
+            with open(filename, "r") as f:
+                submission_script = f.read()
+
+
+            tool_name = "launch_mcp_server_using_script"
             tool_args = {
                 "mcp_name": mcp_name,
                 "wait": wait,
-                "local_script_file": filename,
+                "submission_script": submission_script,
+                "base64_content": False,
             }
         else:
             tool_name = "launch_mcp_server_using_remote_file"
@@ -450,7 +466,7 @@ class LQCDMCPClient:
             lqcd_logger.error(
                 f"Server {mcp_server.mcp_name} launch failed. Error message: {mcp_server.error_message}"
             )
-            return bmcp_server
+            return backend_mcp_server
 
         # add the server to the cache
         async with self._lock:
