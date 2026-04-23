@@ -268,6 +268,11 @@ async def main():
         default=None,
         help="Additional custom mcp.json file to update",
     )
+    parser.add_argument(
+        "--show-token",
+        action="store_true",
+        help="Show the authentication token after login (not recommended for shared environments)",
+    )
     args = parser.parse_args()
 
     proxy_url = args.proxy_url
@@ -290,6 +295,9 @@ async def main():
     proxy_url = proxy_url.rstrip("/")
 
     token = await do_login(proxy_url, not args.insecure)
+    if args.show_token:
+        console.print(f"\n[bold magenta]Your authentication token:[/bold magenta] {token}\n")
+        
     update_mcp_json(proxy_url, token, args.transport, args.extra_config)
     await verify_local_account(proxy_url, token, args.insecure)
 
