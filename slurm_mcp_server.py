@@ -65,12 +65,17 @@ class SlurmMcpServers:
         async with self._lock:
             if slurm_mcp_server.mcp_name in self.slurm_mcp_servers:
                 existing_server = self.slurm_mcp_servers[slurm_mcp_server.mcp_name]
-                if existing_server.slurm_job_state == "RUNNING":
+                # make sure the existing server is not running and url is not registered
+                # otherwise we consider it as a conflict and do not update it
+                lqcd_logger.debug("Existing slurm mcp server found with name {}: {}".
+                                  format(slurm_mcp_server.mcp_name, existing_server))
+                if existing_server.slurm_job_state == "RUNNING" and existing_server.url != "":
                     lqcd_logger.warning(
                         f"Slurm mcp server {slurm_mcp_server.mcp_name} already exists."
                     )
                     return False
-            # if the existing server is not running, update it
+            # if the existing server is not running, or the url is not registered, 
+            # we will update it with the new one.
             self.slurm_mcp_servers[slurm_mcp_server.mcp_name] = slurm_mcp_server
             # update the slurm mcp server by job id
             self.slurm_mcp_servers_by_jobid[slurm_mcp_server.slurm_job_id] = (
