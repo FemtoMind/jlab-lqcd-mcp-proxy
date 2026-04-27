@@ -261,17 +261,21 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                         )
         # ------------------------------
 
-        pc.H2(content="LQCD Slurm Proxy Dashboard")
+        with pc.Column(gap=2) as header_row:
+            pc.H3(content="LQCD Slurm Proxy Dashboard", css_class="font-serif")
+            pc.Lead(content="AmSC FemtoMind Team @ Jlab",align="right", 
+                    css_class="font-serif text-sm text-blue-600 italic")
+            
         pc.Separator()
+        
         # Display of idle nodes and launch button to launch a server
         num = Rx("idle_nodes")
         # Waiting counter to show the launcned job state changing from PENDING to RUNNING
         waiting_counter = Rx("launch_waiting_counter")
 
         with pc.Row(gap=2, justify="between", align="center") as idle_nodes_disaplay:
-            pc.Badge(
-                label=f"{num} Idle Nodes Available", variant="info", css_class="text-lg"
-            )
+            pc.Text("Number of Idle Nodes: ", pc.Span(f"{num}", bold=True, css_class="mx-4 text-lg text-blue-600"),
+                    css_class="px-2 rounded-lg")
 
             # Refresh button to fetch the latest Slurm job states
             pc.Button(
@@ -283,6 +287,11 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                         "get_all_mcp_server_info",
                         on_success=SetState("mcp_servers", RESULT),
                         on_error=ShowToast("Failed to refresh status", variant="error"),
+                    ),
+                    CallTool(
+                        "number_of_idle_nodes",
+                        on_success=SetState("idle_nodes", RESULT),
+                        on_error=ShowToast("Failed to get idle node number", variant="error"),
                     ),
                 ],
             )
@@ -366,6 +375,11 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                     "MCP server launch polling completed.",
                                     variant="info",
                                 ),
+                                CallTool(
+                                    "number_of_idle_nodes",
+                                    on_success=SetState("idle_nodes", RESULT),
+                                    on_error=ShowToast("Failed to get idle node number", variant="error"),
+                                ),
                             ],
                         ),
                     ],
@@ -410,18 +424,17 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                         with pc.TableCell():
                             with pc.If(s.owner == user):
                                 with pc.ButtonGroup():
-                                    # Here is a tricky one, which I haven't figured out how to do it in reflex yet.
                                     with pc.If(s.is_connected):
                                         pc.Button(
                                             label="Connect",
                                             variant="outline",
-                                            icon="bot",
+                                            css_class="text_blue-500 hover:bg-blue-100 px-1",
                                             disabled=True,
                                         )
                                         pc.Button(
                                             label="Disconnect",
                                             variant="outline",
-                                            icon="bot",
+                                            css_class="text-red-500 hover:bg-red-100 px-1",
                                             on_click=[
                                                 CallTool(
                                                     "disconnect_mcp_server",
@@ -440,7 +453,8 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                             ],
                                         )
                                         pc.Button(
-                                            label="Kill",
+                                            label="",
+                                            icon="trash-2",
                                             variant="destructive",
                                             on_click=CallTool(
                                                 "cancel_mcp_server_by_jobid",
@@ -458,7 +472,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                         pc.Button(
                                             label="Connect",
                                             variant="outline",
-                                            icon="bot",
+                                            css_class="text_blue-500 hover:bg-blue-100 px-1",
                                             disabled=(s.slurm_job_state == "PENDING"),
                                             on_click=[
                                                 CallTool(
@@ -491,11 +505,12 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                         pc.Button(
                                             label="Disconnect",
                                             variant="outline",
-                                            icon="bot",
+                                            css_class="text-red-500 hover:bg-red-100 px-1",
                                             disabled=True,
                                         )
                                         pc.Button(
-                                            label="Kill",
+                                            label="",
+                                            icon="trash-2",
                                             variant="destructive",
                                             on_click=CallTool(
                                                 "cancel_mcp_server_by_jobid",
