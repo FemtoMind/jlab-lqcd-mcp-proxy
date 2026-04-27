@@ -456,18 +456,30 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                             label="",
                                             icon="trash-2",
                                             variant="destructive",
-                                            on_click=CallTool(
-                                                "cancel_mcp_server_by_jobid",
-                                                arguments={"job_id": s.slurm_job_id},
-                                                on_success=[
-                                                    SetState("connected_server", ""),
-                                                    SendMessage(
-                                                        f"Please find and remove the MCP server named '{s.mcp_name}' "
-                                                        f"from my IDE's MCP configuration file (e.g. ~/.config/Code/User/mcp.json or claude_desktop_config.json)."
-                                                    ),
-                                                ],
-                                            ),
-                                        )
+                                            on_click=[
+                                                CallTool(
+                                                    "cancel_mcp_server_by_jobid",
+                                                    arguments={"job_id": s.slurm_job_id},
+                                                    on_success=[
+                                                        SetState("connected_server", ""),
+                                                        SendMessage(
+                                                                f"Please find and remove the MCP server named '{s.mcp_name}' "
+                                                                f"from my IDE's MCP configuration file (e.g. ~/.config/Code/User/mcp.json or claude_desktop_config.json)."
+                                                            ),
+                                                        ],
+                                                    on_error=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
+                                                ),
+                                                SetInterval(2000,count=1,
+                                                    on_complete=[
+                                                        CallTool(
+                                                            "get_all_mcp_server_info",
+                                                            on_success=SetState("mcp_servers", RESULT),
+                                                            on_error=ShowToast("Failed to refresh server status", variant="error"),
+                                                        ),
+                                                    ],
+                                                ),
+                                            ],
+                                        ),
                                     with pc.Else():
                                         pc.Button(
                                             label="Connect",
@@ -512,10 +524,22 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                             label="",
                                             icon="trash-2",
                                             variant="destructive",
-                                            on_click=CallTool(
-                                                "cancel_mcp_server_by_jobid",
-                                                arguments={"job_id": s.slurm_job_id},
-                                            ),
+                                            on_click=[
+                                                CallTool(
+                                                    "cancel_mcp_server_by_jobid",
+                                                    arguments={"job_id": s.slurm_job_id},
+                                                    on_error=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
+                                                ),
+                                                SetInterval(2000,count=1,
+                                                    on_complete=[
+                                                        CallTool(
+                                                            "get_all_mcp_server_info",
+                                                            on_success=SetState("mcp_servers", RESULT),
+                                                            on_error=ShowToast("Failed to refresh server status", variant="error"),
+                                                        ),
+                                                    ],
+                                                ),
+                                            ],
                                         )
                             with pc.Else():
                                 pc.Text("")
