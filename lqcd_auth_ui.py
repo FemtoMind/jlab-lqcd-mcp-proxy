@@ -150,7 +150,7 @@ def update_mcp_json(
             s_url = s_config.get("url", s_config.get("serverUrl", ""))
             
             # Check if this server points to the current proxy_url AND has the '/cloud/' subpath
-            if s_url and s_url.startswith(proxy_url) and "/cloud/" in s_url:
+            if s_url and "/cloud/" in s_url:
                 servers_to_remove.append(s_name)
                 
         for s_name in servers_to_remove:
