@@ -1297,11 +1297,14 @@ async def submit_mcp_server_as_slurm_job(
         ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
         # check whether the backend server with this jobid is registered
         backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(jobid)
-        while backend_mcp_server is None:
+
+        wait_counter = 0
+        while backend_mcp_server is None and wait_counter < 20:
             await asyncio.sleep(2)
             backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
                 jobid
             )
+            wait_counter += 1
 
         if backend_mcp_server is not None:
             lqcd_logger.info(
@@ -1315,6 +1318,21 @@ async def submit_mcp_server_as_slurm_job(
                 )
             )
             backend_mcp_server.valid = True
+        else:
+            lqcd_logger.error(
+                "User {} submitted a slurm job {}, but it failed to register a backend mcp server.".format(
+                    user, jobid
+                )
+            )
+            ctx.error(
+                "User {} submitted a slurm job {}, but it failed to register a backend mcp server.".format(
+                    user, jobid
+                )
+            )
+            backend_mcp_server.error_message = "The slurm job is running, but failed to register a backend mcp server. Please check the job status and logs.".format(
+                jobid
+            )
+            backend_mcp_server.valid = False
 
     return backend_mcp_server
 
