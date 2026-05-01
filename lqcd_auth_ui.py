@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
+import platform
 
 console = Console()
 
@@ -92,20 +93,41 @@ def update_mcp_json(
     else:
         url = f"{proxy_url}/jlab"
 
-    target_configs = [
-        {
-            "path": os.path.expanduser("~/.config/Code/User/mcp.json"),
-            "entry_key": "servers",
-            "server_name": "jlab-lqcd-mcp-proxy",
-            "format": "vscode",
-        },
-        {
-            "path": os.path.expanduser("~/.gemini/antigravity/mcp_config.json"),
-            "entry_key": "mcpServers",
-            "server_name": "lqcd-mcp-proxy",
-            "format": "antigravity",
-        },
-    ]
+    # find out I am on Mac or Linux for better instructions
+    system = platform.system()
+    if system == "Linux":
+        target_configs = [
+            {
+                "path": os.path.expanduser("~/.config/Code/User/mcp.json"),
+                "entry_key": "servers",
+                "server_name": "jlab-lqcd-mcp-proxy",
+                "format": "vscode",
+            },
+            {
+                "path": os.path.expanduser("~/.gemini/antigravity/mcp_config.json"),
+                "entry_key": "mcpServers",
+                "server_name": "lqcd-mcp-proxy",
+                "format": "antigravity",
+            },
+        ]
+    elif system == "Darwin":
+        target_configs = [
+            {
+                "path": os.path.expanduser("~/Library/Application Support/Code/User/mcp.json"),
+                "entry_key": "servers",
+                "server_name": "jlab-lqcd-mcp-proxy",
+                "format": "vscode",
+            },
+            {
+                "path": os.path.expanduser("~/.gemini/antigravity/mcp_config.json"),
+                "entry_key": "mcpServers",
+                "server_name": "lqcd-mcp-proxy",
+                "format": "antigravity",
+            },
+        ]
+    else:
+        console.print("[bold yellow]Only Linux and MacOS are officially supported for automatic configuration updates.[/bold yellow]")
+        console.print(f"[bold yellow]Detected system: {system}. You need to copy token manually. You may need to manually update your MCP client configuration.[/bold yellow]")
 
     if custom_path:
         target_configs.append(

@@ -446,7 +446,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                         ),
                                                         SendMessage(
                                                             f"Please find and remove the MCP server named '{s.mcp_name}' "
-                                                            f"from my IDE's MCP configuration file (e.g. ~/.config/Code/User/mcp.json or claude_desktop_config.json)."
+                                                            f"from my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json)."
                                                         ),
                                                     ],
                                                 ),
@@ -464,7 +464,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                         SetState("connected_server", ""),
                                                         SendMessage(
                                                                 f"Please find and remove the MCP server named '{s.mcp_name}' "
-                                                                f"from my IDE's MCP configuration file (e.g. ~/.config/Code/User/mcp.json or claude_desktop_config.json)."
+                                                                f"from my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json)."
                                                             ),
                                                         ],
                                                     on_error=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
@@ -497,7 +497,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                         ),
                                                         SendMessage(
                                                             f"Please add a new StreamableHttp MCP server named '{s.mcp_name}' "
-                                                            f"to my IDE's MCP configuration file (e.g. ~/.config/Code/User/mcp.json or claude_desktop_config.json). "
+                                                            f"to my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json). "
                                                             f"The URL for this server should use the same host and port as the current proxy server, "
                                                             f"but with the path '/cloud/{s.mcp_name}/mcp'. Also, use the exact same authentication "
                                                             f"token and headers as the proxy server."
