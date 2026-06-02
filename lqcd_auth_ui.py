@@ -16,6 +16,31 @@ import platform
 console = Console()
 
 
+# Check if a GUI browser is available to prevent warning messages in headless environments
+def _is_browser_available() -> bool:
+    import sys
+    import os
+    import shutil
+
+    if os.environ.get("BROWSER"):
+        return True
+
+    if sys.platform in ("win32", "darwin"):
+        return True
+
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+
+    if shutil.which("xdg-open"):
+        return True
+
+    for browser in ("google-chrome", "chrome", "firefox", "chromium", "safari"):
+        if shutil.which(browser):
+            return True
+
+    return False
+
+
 async def do_login(proxy_url: str, verify_ssl: bool) -> str:
     console.print(
         f"[bold blue]Initiating authentication with proxy:[/bold blue] {proxy_url}"
@@ -68,11 +93,12 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
             )
             console.print(panel)
 
-            import webbrowser
-            try:
-                webbrowser.open(auth_url)
-            except Exception:
-                pass
+            if _is_browser_available():
+                import webbrowser
+                try:
+                    webbrowser.open(auth_url)
+                except Exception:
+                    pass
 
             auth_code = Prompt.ask("[bold cyan]➤ Enter the authorization code[/bold cyan]").strip()
 
@@ -118,11 +144,12 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
             )
             console.print(panel)
 
-            import webbrowser
-            try:
-                webbrowser.open(verification_uri)
-            except Exception:
-                pass
+            if _is_browser_available():
+                import webbrowser
+                try:
+                    webbrowser.open(verification_uri)
+                except Exception:
+                    pass
 
             with Progress(
                 SpinnerColumn(),

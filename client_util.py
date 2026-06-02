@@ -30,7 +30,31 @@ def _client_process_owner() -> str | None:
         return None
 
 
-# Create a custom httpx.AsyncClient factory with verify=False
+# Check if a GUI browser is available to prevent warning messages in headless environments
+def _is_browser_available() -> bool:
+    import sys
+    import os
+    import shutil
+
+    if os.environ.get("BROWSER"):
+        return True
+
+    if sys.platform in ("win32", "darwin"):
+        return True
+
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+
+    if shutil.which("xdg-open"):
+        return True
+
+    for browser in ("google-chrome", "chrome", "firefox", "chromium", "safari"):
+        if shutil.which(browser):
+            return True
+
+    return False
+
+
 # Create a custom httpx.AsyncClient factory with verify=False
 def _insecure_httpx_client_factory(**kwargs) -> httpx.AsyncClient:
     kwargs.setdefault("follow_redirects", True)
@@ -197,10 +221,11 @@ class LQCDMCPClient:
                 print("2. Log in and copy the authorization code.")
                 print("3. Paste the authorization code below.")
 
-                try:
-                    webbrowser.open(auth_url)
-                except Exception:
-                    pass
+                if _is_browser_available():
+                    try:
+                        webbrowser.open(auth_url)
+                    except Exception:
+                        pass
 
                 auth_code = input("\nEnter the authorization code: ").strip()
 
