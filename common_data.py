@@ -1,6 +1,7 @@
 # Data used across analysis MCP server and client
 import json
 import enum
+import re
 from pydantic import BaseModel, Field
 from datetime import timedelta
 
@@ -225,7 +226,9 @@ class UserComputingAccounts(BaseModel):
 
 # define data class for authentication information
 class OIDCAuthInfo(BaseModel):
-    device_authorization_url: str = Field(description="Device Authorization URL")
+    device_authorization_url: str | None = Field(
+        description="Device Authorization URL", default=""
+    )
     token_url: str = Field(description="Token Retrieval URL")
     token_verify_url: str = Field(description="Token Verification URL")
     client_id: str = Field(description="Client ID")
@@ -233,6 +236,12 @@ class OIDCAuthInfo(BaseModel):
     scope: str = Field(description="Scope")
     grant_type: str = Field(description="Grant Type")
     provider: str = Field(description="Provider name")
+    authorization_url: str | None = Field(
+        description="Authorization URL for Auth Code Flow", default=""
+    )
+    redirect_uri: str | None = Field(
+        description="Redirect URI for Auth Code Flow", default=""
+    )
 
 
 # Slurm mcp server information

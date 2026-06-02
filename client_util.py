@@ -148,35 +148,109 @@ class LQCDMCPClient:
         if self._https_connect and self._server_self_signed_cert:
             do_verify = False
 
+        flow_type = "device_code"
+        authorization_url = ""
+        redirect_uri = ""
+        client_id = ""
+        scope = ""
+
         async with httpx.AsyncClient(verify=do_verify) as client:
-            # 1. Ask Proxy for the login link and code
-            res = (await client.post(f"{self.proxy_url}/auth/device-code")).json()
+            try:
+                info_res = await client.get(f"{self.proxy_url}/auth/info")
+                if info_res.status_code == 200:
+                    info_data = info_res.json()
+                    flow_type = info_data.get("flow_type", "device_code")
+                    authorization_url = info_data.get("authorization_url", "")
+                    redirect_uri = info_data.get("redirect_uri", "")
+                    client_id = info_data.get("client_id", "")
+                    scope = info_data.get("scope", "")
+            except Exception:
+                pass
 
-            if res is None:
-                return None
+            if flow_type == "auth_code":
+                # Authorization Code Flow with PKCE (required by Globus for native apps)
+                import secrets
+                import hashlib
+                import base64
+                import webbrowser
 
-            print(f"\n1. Open: {res['verification_uri']}")
-            print(f"2. Enter Code: {res['user_code']}")
+                code_verifier = secrets.token_urlsafe(64)
+                code_challenge_hash = hashlib.sha256(
+                    code_verifier.encode("utf-8")
+                ).digest()
+                code_challenge = (
+                    base64.urlsafe_b64encode(code_challenge_hash)
+                    .decode("utf-8")
+                    .replace("=", "")
+                )
 
-            # 2. Poll Proxy for the result
-            print("\nWaiting for you to authorize in your browser...")
-            while True:
-                poll = (
-                    await client.post(
-                        f"{self.proxy_url}/auth/poll",
-                        params={"device_code": res["device_code"]},
+                auth_url = (
+                    f"{authorization_url}?client_id={client_id}"
+                    f"&redirect_uri={redirect_uri}"
+                    f"&scope={scope}"
+                    f"&response_type=code"
+                    f"&code_challenge={code_challenge}"
+                    f"&code_challenge_method=S256"
+                )
+
+                print(f"\n1. Open your browser to: {auth_url}")
+                print("2. Log in and copy the authorization code.")
+                print("3. Paste the authorization code below.")
+
+                try:
+                    webbrowser.open(auth_url)
+                except Exception:
+                    pass
+
+                auth_code = input("\nEnter the authorization code: ").strip()
+
+                try:
+                    res_exchange = await client.post(
+                        f"{self.proxy_url}/auth/code-exchange",
+                        params={"code": auth_code, "code_verifier": code_verifier},
                     )
-                ).json()
+                    res_exchange.raise_for_status()
+                    poll_data = res_exchange.json()
 
-                if "access_token" in poll:
-                    print("✅ Login Successful!")
-                    return poll["access_token"]
+                    if "access_token" in poll_data:
+                        print("✅ Login Successful!")
+                        return poll_data["access_token"]
+                    else:
+                        print(f"Authentication failed: {poll_data}")
+                        return None
+                except Exception as e:
+                    print(f"Failed to exchange code: {e}")
+                    return None
 
-                # GitHub sends 'authorization_pending' while user is busy
-                if poll.get("error") not in ["authorization_pending", "slow_down"]:
-                    raise Exception(f"Auth failed: {poll}")
+            else:
+                # Device Code Flow (e.g. CILogon / GitHub)
+                res = (await client.post(f"{self.proxy_url}/auth/device-code")).json()
 
-                await asyncio.sleep(res.get("interval", 5))
+                if res is None:
+                    return None
+
+                print(f"\n1. Open: {res['verification_uri']}")
+                print(f"2. Enter Code: {res['user_code']}")
+
+                # 2. Poll Proxy for the result
+                print("\nWaiting for you to authorize in your browser...")
+                while True:
+                    poll = (
+                        await client.post(
+                            f"{self.proxy_url}/auth/poll",
+                            params={"device_code": res["device_code"]},
+                        )
+                    ).json()
+
+                    if "access_token" in poll:
+                        print("✅ Login Successful!")
+                        return poll["access_token"]
+
+                    # GitHub sends 'authorization_pending' while user is busy
+                    if poll.get("error") not in ["authorization_pending", "slow_down"]:
+                        raise Exception(f"Auth failed: {poll}")
+
+                    await asyncio.sleep(res.get("interval", 5))
 
     # Show computing resources
     async def show_computing_resources(self) -> FullSystemResource:
@@ -443,7 +517,6 @@ class LQCDMCPClient:
             # read file content
             with open(filename, "r") as f:
                 submission_script = f.read()
-
 
             tool_name = "launch_mcp_server_using_script"
             tool_args = {

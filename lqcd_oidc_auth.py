@@ -134,11 +134,61 @@ from fastapi import APIRouter
 auth_router = APIRouter()
 
 
+@auth_router.get("/auth/info")
+async def get_auth_flow_info():
+    """Returns OIDC settings including the flow type to guide the client."""
+    if __auth_info is None:
+        raise HTTPException(status_code=500, detail="OIDC is not loaded")
+
+    flow_type = (
+        "auth_code" if not __auth_info.device_authorization_url else "device_code"
+    )
+    return {
+        "provider": __auth_info.provider,
+        "flow_type": flow_type,
+        "authorization_url": __auth_info.authorization_url,
+        "redirect_uri": __auth_info.redirect_uri,
+        "client_id": __auth_info.client_id,
+        "scope": __auth_info.scope,
+    }
+
+
+@auth_router.post("/auth/code-exchange")
+async def exchange_auth_code(code: str, code_verifier: str = None):
+    """Exchanges an authorization code for an OIDC token with optional PKCE verification."""
+    if __auth_info is None:
+        raise HTTPException(status_code=500, detail="OIDC is not loaded")
+
+    async with httpx.AsyncClient() as client:
+        data = {
+            "client_id": __auth_info.client_id,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": __auth_info.redirect_uri
+            or "https://auth.globus.org/v2/web/auth-code",
+        }
+        if __auth_info.client_secret:
+            data["client_secret"] = __auth_info.client_secret
+        if code_verifier:
+            data["code_verifier"] = code_verifier
+
+        resp = await client.post(
+            __auth_info.token_url,
+            data=data,
+            headers={"Accept": "application/json"},
+        )
+        return resp.json()
+
+
 @auth_router.post("/auth/device-code")
 async def start_auth_device_flow():
     """Step 1: Proxy requests verification codes from OIDC provider."""
     if __auth_info is None:
-        return None
+        raise HTTPException(status_code=500, detail="OIDC is not loaded")
+    if not __auth_info.device_authorization_url:
+        raise HTTPException(
+            status_code=400, detail="Device flow not supported for this provider"
+        )
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -156,7 +206,11 @@ async def start_auth_device_flow():
 @auth_router.post("/auth/poll")
 async def poll_auth_token(device_code: str):
     if __auth_info is None:
-        return None
+        raise HTTPException(status_code=500, detail="OIDC is not loaded")
+    if not __auth_info.device_authorization_url:
+        raise HTTPException(
+            status_code=400, detail="Device flow not supported for this provider"
+        )
 
     """Step 2: Proxy polls OIDC provider for the access token using its Secret."""
     async with httpx.AsyncClient() as client:

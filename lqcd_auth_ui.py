@@ -21,67 +21,142 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
         f"[bold blue]Initiating authentication with proxy:[/bold blue] {proxy_url}"
     )
 
+    flow_type = "device_code"
+    authorization_url = ""
+    redirect_uri = ""
+    client_id = ""
+    scope = ""
+
     async with httpx.AsyncClient(verify=verify_ssl, timeout=30.0) as client:
         try:
-            res = await client.post(f"{proxy_url}/auth/device-code")
-            res.raise_for_status()
-            data = res.json()
-        except Exception as e:
-            console.print(f"[bold red]Failed to get device code:[/bold red] {e}")
-            raise SystemExit(1)
-
-        verification_uri = data.get("verification_uri")
-        user_code = data.get("user_code")
-        device_code = data.get("device_code")
-        interval = data.get("interval", 5)
-
-        panel = Panel(
-            f"1. Open your browser to: [bold green]{verification_uri}[/bold green]\n"
-            f"2. Enter the code: [bold yellow]{user_code}[/bold yellow]",
-            title="Authentication Required",
-            expand=False,
-        )
-        console.print(panel)
-
-        import webbrowser
-
-        try:
-            webbrowser.open(verification_uri)
+            info_res = await client.get(f"{proxy_url}/auth/info")
+            if info_res.status_code == 200:
+                info_data = info_res.json()
+                flow_type = info_data.get("flow_type", "device_code")
+                authorization_url = info_data.get("authorization_url", "")
+                redirect_uri = info_data.get("redirect_uri", "")
+                client_id = info_data.get("client_id", "")
+                scope = info_data.get("scope", "")
         except Exception:
             pass
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True,
-        ) as progress:
-            progress.add_task(
-                description="Waiting for browser authorization...", total=None
+        if flow_type == "auth_code":
+            # Authorization Code Flow with PKCE (required by Globus for native apps)
+            import secrets
+            import hashlib
+            import base64
+
+            code_verifier = secrets.token_urlsafe(64)
+            code_challenge_hash = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+            code_challenge = base64.urlsafe_b64encode(code_challenge_hash).decode('utf-8').replace('=', '')
+
+            auth_url = (
+                f"{authorization_url}?client_id={client_id}"
+                f"&redirect_uri={redirect_uri}"
+                f"&scope={scope}"
+                f"&response_type=code"
+                f"&code_challenge={code_challenge}"
+                f"&code_challenge_method=S256"
             )
-            while True:
-                try:
-                    poll = await client.post(
-                        f"{proxy_url}/auth/poll", params={"device_code": device_code}
-                    )
-                    poll_data = poll.json()
+            
+            panel = Panel(
+                f"1. Open your browser to: [bold green]{auth_url}[/bold green]\n"
+                f"2. Log in and copy the authorization code.\n"
+                f"3. Paste the authorization code below.",
+                title="Authentication Required",
+                expand=False,
+            )
+            console.print(panel)
 
-                    if "access_token" in poll_data:
-                        console.print("[bold green]✅ Login Successful![/bold green]")
-                        return poll_data["access_token"]
+            import webbrowser
+            try:
+                webbrowser.open(auth_url)
+            except Exception:
+                pass
 
-                    error = poll_data.get("error")
-                    if error not in ["authorization_pending", "slow_down"]:
-                        console.print(
-                            f"[bold red]Authentication failed:[/bold red] {poll_data}"
-                        )
-                        raise SystemExit(1)
-                except httpx.ReadError:
-                    pass  # Ignore temporary network glitches
-                except Exception as e:
-                    console.print(f"[bold red]Error during polling:[/bold red] {e}")
+            auth_code = Prompt.ask("[bold cyan]➤ Enter the authorization code[/bold cyan]").strip()
+
+            try:
+                res = await client.post(
+                    f"{proxy_url}/auth/code-exchange", 
+                    params={"code": auth_code, "code_verifier": code_verifier}
+                )
+                res.raise_for_status()
+                poll_data = res.json()
+
+                if "access_token" in poll_data:
+                    console.print("[bold green]✅ Login Successful![/bold green]")
+                    return poll_data["access_token"]
+                else:
+                    console.print(f"[bold red]Authentication failed:[/bold red] {poll_data}")
                     raise SystemExit(1)
+            except Exception as e:
+                console.print(f"[bold red]Failed to exchange code:[/bold red] {e}")
+                raise SystemExit(1)
 
-                await asyncio.sleep(interval)
+
+        else:
+            # Device Code Flow (e.g. CILogon / GitHub)
+            try:
+                res = await client.post(f"{proxy_url}/auth/device-code")
+                res.raise_for_status()
+                data = res.json()
+            except Exception as e:
+                console.print(f"[bold red]Failed to get device code:[/bold red] {e}")
+                raise SystemExit(1)
+
+            verification_uri = data.get("verification_uri")
+            user_code = data.get("user_code")
+            device_code = data.get("device_code")
+            interval = data.get("interval", 5)
+
+            panel = Panel(
+                f"1. Open your browser to: [bold green]{verification_uri}[/bold green]\n"
+                f"2. Enter the code: [bold yellow]{user_code}[/bold yellow]",
+                title="Authentication Required",
+                expand=False,
+            )
+            console.print(panel)
+
+            import webbrowser
+            try:
+                webbrowser.open(verification_uri)
+            except Exception:
+                pass
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True,
+            ) as progress:
+                progress.add_task(
+                    description="Waiting for browser authorization...", total=None
+                )
+                while True:
+                    try:
+                        poll = await client.post(
+                            f"{proxy_url}/auth/poll", params={"device_code": device_code}
+                        )
+                        poll_data = poll.json()
+
+                        if "access_token" in poll_data:
+                            console.print("[bold green]✅ Login Successful![/bold green]")
+                            return poll_data["access_token"]
+
+                        error = poll_data.get("error")
+                        if error not in ["authorization_pending", "slow_down"]:
+                            console.print(
+                                f"[bold red]Authentication failed:[/bold red] {poll_data}"
+                            )
+                            raise SystemExit(1)
+                    except httpx.ReadError:
+                        pass  # Ignore temporary network glitches
+                    except Exception as e:
+                        console.print(f"[bold red]Error during polling:[/bold red] {e}")
+                        raise SystemExit(1)
+
+                    await asyncio.sleep(interval)
+
 
 
 def update_mcp_json(
@@ -104,6 +179,12 @@ def update_mcp_json(
                 "format": "vscode",
             },
             {
+                "path": os.path.expanduser("~/.gemini/config/mcp_config.json"),
+                "entry_key": "mcpServers",
+                "server_name": "lqcd-mcp-proxy",
+                "format": "antigravity",
+            },
+            {
                 "path": os.path.expanduser("~/.gemini/antigravity/mcp_config.json"),
                 "entry_key": "mcpServers",
                 "server_name": "lqcd-mcp-proxy",
@@ -119,12 +200,19 @@ def update_mcp_json(
                 "format": "vscode",
             },
             {
+                "path": os.path.expanduser("~/.gemini/config/mcp_config.json"),
+                "entry_key": "mcpServers",
+                "server_name": "lqcd-mcp-proxy",
+                "format": "antigravity",
+            },
+            {
                 "path": os.path.expanduser("~/.gemini/antigravity/mcp_config.json"),
                 "entry_key": "mcpServers",
                 "server_name": "lqcd-mcp-proxy",
                 "format": "antigravity",
             },
         ]
+
     else:
         console.print("[bold yellow]Only Linux and MacOS are officially supported for automatic configuration updates.[/bold yellow]")
         console.print(f"[bold yellow]Detected system: {system}. You need to copy token manually. You may need to manually update your MCP client configuration.[/bold yellow]")
