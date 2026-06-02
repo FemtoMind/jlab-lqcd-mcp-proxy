@@ -30,29 +30,50 @@ def _client_process_owner() -> str | None:
         return None
 
 
-# Check if a GUI browser is available to prevent warning messages in headless environments
-def _is_browser_available() -> bool:
-    import sys
+# Try to open the browser, but redirect stdout and stderr at the OS level
+# to /dev/null to hide any error/warning messages from xdg-open/browsers
+# in headless or misconfigured environments.
+def _open_browser_silently(url: str) -> bool:
     import os
-    import shutil
+    import sys
+    import webbrowser
 
-    if os.environ.get("BROWSER"):
-        return True
+    devnull_fd = None
+    saved_stdout_fd = None
+    saved_stderr_fd = None
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        saved_stdout_fd = os.dup(1)
+        saved_stderr_fd = os.dup(2)
+        os.dup2(devnull_fd, 1)
+        os.dup2(devnull_fd, 2)
+    except Exception:
+        pass
 
-    if sys.platform in ("win32", "darwin"):
-        return True
+    try:
+        res = webbrowser.open(url)
+    except Exception:
+        res = False
+    finally:
+        if saved_stdout_fd is not None:
+            try:
+                os.dup2(saved_stdout_fd, 1)
+                os.close(saved_stdout_fd)
+            except Exception:
+                pass
+        if saved_stderr_fd is not None:
+            try:
+                os.dup2(saved_stderr_fd, 2)
+                os.close(saved_stderr_fd)
+            except Exception:
+                pass
+        if devnull_fd is not None:
+            try:
+                os.close(devnull_fd)
+            except Exception:
+                pass
 
-    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        return False
-
-    if shutil.which("xdg-open"):
-        return True
-
-    for browser in ("google-chrome", "chrome", "firefox", "chromium", "safari"):
-        if shutil.which(browser):
-            return True
-
-    return False
+    return res
 
 
 # Create a custom httpx.AsyncClient factory with verify=False
@@ -221,11 +242,7 @@ class LQCDMCPClient:
                 print("2. Log in and copy the authorization code.")
                 print("3. Paste the authorization code below.")
 
-                if _is_browser_available():
-                    try:
-                        webbrowser.open(auth_url)
-                    except Exception:
-                        pass
+                _open_browser_silently(auth_url)
 
                 auth_code = input("\nEnter the authorization code: ").strip()
 
