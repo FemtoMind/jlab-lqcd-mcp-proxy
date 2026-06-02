@@ -3,9 +3,11 @@ MCP_USE_JLAB_SLURM=true
 # OIDC setting file
 LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
+#LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_globus.json
 # Convert user id to local account mapping file
 LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
+#LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_globus.json
 # Use https
 # USE_HTTPS=true
 # SSL CERT and Key File
