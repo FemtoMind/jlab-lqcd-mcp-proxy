@@ -1,11 +1,13 @@
 # SLURM setting
 MCP_USE_JLAB_SLURM=false
 # OIDC setting file
-#LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
-LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
+#LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_oidc_settings_cilogon.json
+LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_oidc_settings_github.json
+#LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_oidc_settings_globus.json
 # Convert user id to local account mapping file
-#LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
-LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
+#LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map.json
+LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_github.json
+#LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_globus.json
 # Use https
 # USE_HTTPS=true
 # SSL CERT and Key File
@@ -13,5 +15,9 @@ PROXY_CERT_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/cert.
 PROXY_KEY_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
 # Log file
 # PROXY_LOG_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy/server.log
+# Client IDLE timeout to close the connection (in seconds)
+CLIENT_IDLE_TIMEOUT=3600
+# Frequency to check for idle clients (in seconds)
+CLIENT_IDLE_CHECK_INTERVAL=60
 # Debug mode
 DEBUG=true
