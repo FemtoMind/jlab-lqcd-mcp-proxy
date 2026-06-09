@@ -69,6 +69,22 @@ else:
         fastmcp_configure_logging(level=logging.INFO)
     lqcd_logger.info("Debug mode is disabled.")
 
+# check whether we are integrated inside IRI
+_iri_integration = os.getenv("IRI_INTEGRATION", "true").lower() == "true"
+if _iri_integration:
+    lqcd_logger.info("Our server is integrated with IRI.")
+else:
+    lqcd_logger.info("Our server is not integrated with IRI.")
+
+# get IRI path from .server_env
+if _iri_integration:
+    _iri_path = os.getenv("IRI_DIR")
+    if not _iri_path:
+        lqcd_logger.error("IRI_DIR is not set")
+        sys.exit(1)
+    lqcd_logger.info(f"IRI directory: {_iri_path}")
+
+
 lqcd_logger.info("Loading .server_env file... done.")
 
 
@@ -139,6 +155,22 @@ async def check_idle_clients():
 @asynccontextmanager
 async def proxy_app_lifespan(app):
     """Custom lifespan to attach our background tasks alongside FastMCP's."""
+    # Initialize session manager
+    lqcd_session_manager()
+
+    # Read OIDC authentication configuration from file
+    read_oidc_auth_info()
+    # Load user account mapping from file
+    load_user_account_mapping()
+
+    # Setup MCP servers
+    await setup_mcp_servers()
+
+    # Log all routes to diagnose routing precedence
+    lqcd_logger.info("Registered routes:")
+    for r in app.routes:
+        lqcd_logger.info(f"Route: {getattr(r, 'path', 'N/A')} ({type(r).__name__})")
+
     async with lqcd_mcp_main_app.router.lifespan_context(app):
         # Now the event loop is ready; launch periodic background task
         scan_slurm_task = asyncio.create_task(scan_slurm_jobs())
@@ -286,6 +318,7 @@ from lqcd_oidc_auth import read_oidc_auth_info, load_user_account_mapping
 # include the auth router
 proxy_app.include_router(auth_router, prefix="", tags=["auth"])
 
+
 # Get session id from a request
 def get_session_id_from_request(request: Request) -> str | None:
     """Extract session id from the request headers or query parameters."""
@@ -314,6 +347,14 @@ def get_session_id_from_request(request: Request) -> str | None:
 # Add custom  middleware
 @proxy_app.middleware("http")
 async def request_middleware(request: Request, call_next):
+    # Redirect exactly /jlab to /jlab/ (using 307 to preserve POST method and body)
+    # to prevent the root mount "/" from hijacking the request.
+    if request.url.path == "/jlab":
+        lqcd_logger.info("Redirecting /jlab to /jlab/ to prevent root mount hijack")
+        from fastapi.responses import RedirectResponse
+
+        return RedirectResponse(url="/jlab/", status_code=307)
+
     start_time = time.time()
 
     # Log request details
@@ -484,7 +525,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             status_code=status,
             headers={"Content-Type": "application/json"},
         )
-    
+
     # generate a response stream used to construct StreamingResponse
     # This is used to check whether the stream from proxy to the backend is broken
     async def _proxy_response_stream(rp_resp: httpx.Response, mcp_name: str):
@@ -497,10 +538,12 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             await delete_cloud_server(mcp_name)
             lqcd_logger.info(f"Backend {mcp_name} removed from cloud server list")
             # clean up all sessions that are connected to this backend server
-            # This happens when the backend server is crashed, so we need to clean up the session 
-            # state on UI by removing the backend server from the session resource "connected_servers". 
+            # This happens when the backend server is crashed, so we need to clean up the session
+            # state on UI by removing the backend server from the session resource "connected_servers".
             # This will make sure the UI can reflect the correct state of connections.
-            await lqcd_session_manager().remove_resource_all_sessions_set("connected_servers", mcp_name)
+            await lqcd_session_manager().remove_resource_all_sessions_set(
+                "connected_servers", mcp_name
+            )
         except Exception as e:
             lqcd_logger.error(f"Backend {mcp_name} streaming error: {e}")
             # We cannot change the status code here as the headers are already sent.
@@ -514,15 +557,21 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
     )
 
 
+# Mount the IRI FastAPI app at /
+if _iri_integration:
+    import sys
+
+    if _iri_path not in sys.path:
+        sys.path.append(_iri_path)
+
+    import importlib
+
+    app_main = importlib.import_module("app.main")
+    iri_app = app_main.APP
+
+    proxy_app.mount("/", iri_app)
+
 if __name__ == "__main__":
-    # get the session manager
-    session_manager = lqcd_session_manager()
-
-    # read OIDC authentication configuration from file
-    read_oidc_auth_info()
-    # load user account mapping from file
-    load_user_account_mapping()
-
     parser = argparse.ArgumentParser(
         description="MCP Streamable HTTP LQCD Analysis proxy server"
     )
@@ -539,11 +588,6 @@ if __name__ == "__main__":
     else:
         lqcd_logger.info("Log file is not set, using console logger")
         custom_log_config = LOGGING_CONFIG
-
-    # You run this server using uvicorn, which runs the FastAPI app
-    # fastmcp run server.py automatically handles this if you use its CLI
-    # but for local testing you can use uvicorn directly on the 'app' object
-    asyncio.run(setup_mcp_servers())
 
     # check whether we are running https
     _use_https = os.getenv("USE_HTTPS", "false").lower() == "true"

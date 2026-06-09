@@ -8,6 +8,9 @@ LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_setti
 LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_globus.json
+# Integrate with IRI
+IRI_INTEGRATION=false
+IRI_DIR=/usr/local/lqcd_proxy/iri-facility-api-python
 # Use https
 # USE_HTTPS=true
 # SSL CERT and Key File

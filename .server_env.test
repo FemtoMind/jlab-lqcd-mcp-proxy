@@ -8,6 +8,9 @@ LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_o
 #LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map.json
 LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_github.json
 #LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_globus.json
+# Integrate with IRI
+IRI_INTEGRATION=true
+IRI_DIR=/home/chen/amsc/iri-facility-api-python
 # Use https
 # USE_HTTPS=true
 # SSL CERT and Key File
