@@ -421,6 +421,12 @@ async def main():
         action="store_true",
         help="Show the authentication token after login (not recommended for shared environments)",
     )
+    parser.add_argument(
+        "--token",
+        type=str,
+        default="",
+        help="Directly use a copied authentication token instead of logging in",
+    )
     args = parser.parse_args()
 
     proxy_url = args.proxy_url
@@ -442,12 +448,41 @@ async def main():
     # Strip trailing slash
     proxy_url = proxy_url.rstrip("/")
 
-    token = await do_login(proxy_url, not args.insecure)
+    # Check command-line flag or environment variable for manual token override
+    token = args.token or os.getenv("LQCDMCP_TOKEN", "")
+    if token:
+        console.print("[bold green]Using manually provided token. Skipping login flow...[/bold green]")
+    else:
+        console.print("\n[bold cyan]Select Authentication Method:[/bold cyan]")
+        console.print("  [green]1)[/green] Globus / OIDC (automatic browser login)")
+        console.print("  [green]2)[/green] American Science Cloud Portal (copy-paste token)")
+        
+        choice = Prompt.ask(
+            "[bold cyan]➤ Choose an option[/bold cyan]",
+            choices=["1", "2"],
+            default="1"
+        )
+        
+        if choice == "2":
+            asc_url = "https://my.american-science-cloud.org"
+            console.print(f"\n1. Open your browser to: [bold green]{asc_url}[/bold green]")
+            console.print("2. Log in and copy the access token from your profile page.")
+            import webbrowser
+            try:
+                webbrowser.open(asc_url)
+            except Exception:
+                pass
+            token = Prompt.ask("[bold cyan]➤ Enter the access token[/bold cyan]").strip()
+        else:
+            token = await do_login(proxy_url, not args.insecure)
+
+
     if args.show_token:
         console.print(f"\n[bold magenta]Your authentication token:[/bold magenta] {token}\n")
         
     update_mcp_json(proxy_url, token, args.transport, args.extra_config)
     await verify_local_account(proxy_url, token, args.insecure)
+
 
 
 if __name__ == "__main__":
