@@ -325,8 +325,10 @@ class LQCDMCPClient:
     async def connect_to_proxy(self, elicitation_handler=None):
         """Connect to proxy server and authenticate the client."""
         # First, authenticate to get access token
-        access_token = None
-        if self._trust_client == False:
+        # If the environment variable LQCDMCP_TOKEN is set, use it as the access token.
+        # This token comes from some place like "my.american-science-cloud.org"
+        access_token = os.getenv("LQCDMCP_TOKEN", None)
+        if not access_token and self._trust_client == False:
             access_token = await self.__login()
 
             # check token
