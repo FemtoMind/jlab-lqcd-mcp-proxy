@@ -67,14 +67,20 @@ class SlurmMcpServers:
                 existing_server = self.slurm_mcp_servers[slurm_mcp_server.mcp_name]
                 # make sure the existing server is not running and url is not registered
                 # otherwise we consider it as a conflict and do not update it
-                lqcd_logger.debug("Existing slurm mcp server found with name {}: {}".
-                                  format(slurm_mcp_server.mcp_name, existing_server))
-                if existing_server.slurm_job_state == "RUNNING" and existing_server.url != "":
+                lqcd_logger.debug(
+                    "Existing slurm mcp server found with name {}: {}".format(
+                        slurm_mcp_server.mcp_name, existing_server
+                    )
+                )
+                if (
+                    existing_server.slurm_job_state == "RUNNING"
+                    and existing_server.url != ""
+                ):
                     lqcd_logger.warning(
                         f"Slurm mcp server {slurm_mcp_server.mcp_name} already exists."
                     )
                     return False
-            # if the existing server is not running, or the url is not registered, 
+            # if the existing server is not running, or the url is not registered,
             # we will update it with the new one.
             self.slurm_mcp_servers[slurm_mcp_server.mcp_name] = slurm_mcp_server
             # update the slurm mcp server by job id
@@ -180,17 +186,6 @@ class SlurmMcpServers:
         """Get the list of slurm backend server names."""
         async with self._lock:
             return list(self.slurm_mcp_servers.keys())
-
-    async def get_slurm_mcp_servers_by_owner(
-        self, owner: str
-    ) -> list[cdata.SlurmMcpServer]:
-        """Get all slurm backend servers owned by the user."""
-        async with self._lock:
-            return [
-                server
-                for server in self.slurm_mcp_servers.values()
-                if server.owner == owner
-            ]
 
 
 # Class handling slurm related tasks
@@ -443,13 +438,14 @@ class SlurmSpawner:
         for server in removed_servers:
             lqcd_logger.warning(f"Removing a finished slurm job {server.slurm_job_id}")
             # Need to remve the backeend server from connected servers resource of all sessions
-            await lqcd_session_manager().remove_resource_all_sessions_set("connected_servers", server.mcp_name)
+            await lqcd_session_manager().remove_resource_all_sessions_set(
+                "connected_servers", server.mcp_name
+            )
 
             # Then remove the server from the server manager
             await self.slurm_mcp_servers.remove_slurm_mcp_server_by_jobid(
                 server.slurm_job_id
             )
-
 
         return job_states
 
@@ -714,7 +710,9 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
         lqcd_logger.info(
             "Use provided username {} as local account for test.".format(username)
         )
-        ctx.info("Use provided username {} as local account for test.".format(username))
+        await ctx.info(
+            "Use provided username {} as local account for test.".format(username)
+        )
 
         return {"user_id": username, "user_account": username}
 
@@ -756,14 +754,16 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
         lqcd_logger.info(
             f"Mapped user identity '{user_login}' to local account '{local_account}'."
         )
-        ctx.info(
+        await ctx.info(
             f"Mapped user identity '{user_login}' to local account '{local_account}'."
         )
     else:
         lqcd_logger.warning(
             f"Could not map user identity '{user_login}' to any local account."
         )
-        ctx.error(f"Could not map user identity '{user_login}' to any local account.")
+        await ctx.error(
+            f"Could not map user identity '{user_login}' to any local account."
+        )
     return response
 
 
@@ -864,7 +864,7 @@ async def get_user_slurm_accounts(unused: str = "") -> cdata.UserComputingAccoun
 
     if len(user_accounts) == 0:
         lqcd_logger.warning("User {} does not have any slurm accounts.".format(user))
-        ctx.warning("User {} does not have any slurm accounts.".format(user))
+        await ctx.error("User {} does not have any slurm accounts.".format(user))
         return cdata.UserComputingAccounts(
             user_name=user,
             slurm_accounts=["N/A"],
@@ -889,7 +889,7 @@ async def build_slurm_submission(
     slurm_accounts = await lqcd_slurm_manager.get_slurm_accounts(user)
     if len(slurm_accounts) == 0:
         lqcd_logger.error("User {} does not have any slurm accounts.".format(user))
-        ctx.error("User {} does not have any slurm accounts.".format(user))
+        await ctx.error("User {} does not have any slurm accounts.".format(user))
         return None
 
     # Register slurm accounts to this session
@@ -907,7 +907,7 @@ async def build_slurm_submission(
         lqcd_logger.warning(
             "User {} decided not to proceed to launch a mcp server.".format(user)
         )
-        ctx.warning(
+        await ctx.error(
             "User {} decided not to proceed to launch a mcp server.".format(user)
         )
         return None
@@ -931,7 +931,7 @@ async def build_slurm_submission(
         lqcd_logger.warning(
             "User {} decided not to proceed to launch a mcp server.".format(user)
         )
-        ctx.warning(
+        await ctx.error(
             "User {} decided not to proceed to launch a mcp server.".format(user)
         )
         return None
@@ -943,7 +943,7 @@ async def build_slurm_submission(
                 user, slurm_job.run_script
             )
         )
-        ctx.error(
+        await ctx.error(
             "User {} provided script {} does not exist".format(
                 user, slurm_job.run_script
             )
@@ -968,7 +968,7 @@ async def check_mcp_server_status(
     sid = ctx.session_id
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         return cdata.SlurmMcpServer(
             slurm_job_id=job_id,
@@ -981,7 +981,9 @@ async def check_mcp_server_status(
         "MCP server returned from job id {} info: {}".format(job_id, backend_mcp_server)
     )
     if backend_mcp_server is None:
-        ctx.error("Cannot find mcp server associated with this jobid {}".format(job_id))
+        await ctx.error(
+            "Cannot find mcp server associated with this jobid {}".format(job_id)
+        )
         lqcd_logger.error(
             "Cannot find mcp server associated with this jobid {}".format(job_id)
         )
@@ -994,7 +996,7 @@ async def check_mcp_server_status(
         )
 
     if user != backend_mcp_server.owner:
-        ctx.error(
+        await ctx.error(
             "User {} does not have permission to check the mcp server status.".format(
                 user
             )
@@ -1045,7 +1047,7 @@ async def check_mcp_server_status(
 
         # This should never happen
         if backend_mcp_server is None:
-            ctx.error(
+            await ctx.error(
                 "Cannot find mcp server associated with this jobid {}".format(job_id)
             )
             lqcd_logger.error(
@@ -1062,6 +1064,11 @@ async def check_mcp_server_status(
             backend_mcp_server.slurm_job_state != "RUNNING"
             and num_retries >= max_retries
         ):
+            await ctx.error(
+                "This jobid {} has problem register itself. Please check it manually.".format(
+                    job_id
+                )
+            )
             lqcd_logger.error(
                 "This jobid {} has problem register itself. Please check it manually.".format(
                     job_id
@@ -1080,7 +1087,7 @@ async def check_mcp_server_status(
             )
     else:
         await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(job_id)
-        ctx.error(
+        await ctx.error(
             "Job {} has finished or failed. The mcp server has been removed.".format(
                 job_id
             )
@@ -1122,7 +1129,7 @@ async def _cancel_mcp_server_by_jobid_int(
     sid = ctx.session_id
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         return cdata.SlurmJobCancelStatus(
             job_id=str(job_id),
@@ -1136,7 +1143,9 @@ async def _cancel_mcp_server_by_jobid_int(
         "MCP server returned from job id {} info: {}".format(job_id, backend_mcp_server)
     )
     if backend_mcp_server is None:
-        ctx.error("Cannot find mcp server associated with this jobid {}".format(job_id))
+        await ctx.error(
+            "Cannot find mcp server associated with this jobid {}".format(job_id)
+        )
         lqcd_logger.error(
             "Cannot find mcp server associated with this jobid {}".format(job_id)
         )
@@ -1149,7 +1158,7 @@ async def _cancel_mcp_server_by_jobid_int(
         )
 
     if user != backend_mcp_server.owner:
-        ctx.error(
+        await ctx.error(
             "User {} does not have permission to check the mcp server status.".format(
                 user
             )
@@ -1174,7 +1183,7 @@ async def _cancel_mcp_server_by_jobid_int(
     if ret_status.status == cdata.SlurmJobCancelStatus._status_value.SUCCESS:
         await lqcd_mcp_servers.remove_slurm_mcp_server_by_jobid(job_id)
     else:
-        ctx.error("Failed to delete job {}".format(job_id))
+        await ctx.error("Failed to delete job {}".format(job_id))
         lqcd_logger.error("Failed to delete job {}".format(job_id))
     return ret_status
 
@@ -1207,7 +1216,9 @@ async def cancel_mcp_server_by_name(
     )
     backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server(name)
     if backend_mcp_server is None:
-        ctx.error("Cannot find mcp server associated with this name {}".format(name))
+        await ctx.error(
+            "Cannot find mcp server associated with this name {}".format(name)
+        )
         lqcd_logger.error(
             "Cannot find mcp server associated with this name {}".format(name)
         )
@@ -1258,12 +1269,12 @@ async def submit_mcp_server_as_slurm_job(
     )
     if jobid is None:
         lqcd_logger.error("Failed to submit a slurm job.")
-        ctx.error("Failed to submit a slurm job.")
+        await ctx.error("Failed to submit a slurm job.")
         backend_mcp_server.error_message = "Failed to submit a slurm job."
         return backend_mcp_server
 
     lqcd_logger.info("User {} submitted a slurm job: {}".format(user, jobid))
-    ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
+    await ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
 
     # update jobid and name
     backend_mcp_server.slurm_job_id = int(jobid)
@@ -1273,7 +1284,7 @@ async def submit_mcp_server_as_slurm_job(
     job_info = await lqcd_slurm_manager.get_slurm_job_info(jobid)
     if job_info is None:
         lqcd_logger.error("Failed to get slurm job info.")
-        ctx.error("Failed to get slurm job info.")
+        await ctx.error("Failed to get slurm job info.")
         backend_mcp_server.error_message = "Failed to get slurm job info."
         return backend_mcp_server
 
@@ -1284,7 +1295,7 @@ async def submit_mcp_server_as_slurm_job(
     job_status = await lqcd_slurm_manager.check_slurm_job_state(jobid)
     if job_status is None:
         lqcd_logger.error("Failed to get slurm job status.")
-        ctx.error("Failed to get slurm job status.")
+        await ctx.error("Failed to get slurm job status.")
         backend_mcp_server.error_message = "Failed to get slurm job status."
         return backend_mcp_server
 
@@ -1294,7 +1305,7 @@ async def submit_mcp_server_as_slurm_job(
 
     if job_status == "RUNNING":
         lqcd_logger.info("User {} submitted a slurm job: {}".format(user, jobid))
-        ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
+        await ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
         # check whether the backend server with this jobid is registered
         backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(jobid)
 
@@ -1312,7 +1323,7 @@ async def submit_mcp_server_as_slurm_job(
                     user, backend_mcp_server
                 )
             )
-            ctx.info(
+            await ctx.info(
                 "User {} registered a backend mcp server {}".format(
                     user, backend_mcp_server
                 )
@@ -1324,7 +1335,7 @@ async def submit_mcp_server_as_slurm_job(
                     user, jobid
                 )
             )
-            ctx.error(
+            await ctx.error(
                 "User {} submitted a slurm job {}, but it failed to register a backend mcp server.".format(
                     user, jobid
                 )
@@ -1361,7 +1372,7 @@ async def launch_mcp_server_on_slurm_or_cloud(
     # Get user name
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         backend_mcp_server.error_message = (
             "Cannot find username associated with this session."
@@ -1388,7 +1399,7 @@ async def launch_mcp_server_on_slurm_or_cloud(
         else:
             submission_script = slurm_job.content
     else:
-        ctx.error("Invalid slurm job.")
+        await ctx.error("Invalid slurm job.")
         lqcd_logger.error("Invalid slurm job.")
         backend_mcp_server.error_message = "Invalid slurm job."
         return backend_mcp_server
@@ -1436,7 +1447,7 @@ async def epilogue_mcp_slurm_server(
                 job_status = await lqcd_slurm_manager.check_slurm_job_state(job_id_str)
                 if job_status is None:
                     lqcd_logger.error("Failed to get slurm job status.")
-                    ctx.error("Failed to get slurm job status.")
+                    await ctx.error("Failed to get slurm job status.")
                     backend_mcp_server.error_message = "Failed to get slurm job status."
                     return backend_mcp_server
                 else:
@@ -1448,7 +1459,7 @@ async def epilogue_mcp_slurm_server(
                             job_status,
                         )
                     )
-                    ctx.info(
+                    await ctx.info(
                         "User {} mcp slurm job with job id {} and job name {} is in state {}".format(
                             user,
                             job_id_str,
@@ -1471,7 +1482,7 @@ async def epilogue_mcp_slurm_server(
                     user, backend_mcp_server
                 )
             )
-            ctx.info(
+            await ctx.info(
                 "User {} registered a backend mcp server {}".format(
                     user, backend_mcp_server
                 )
@@ -1486,7 +1497,7 @@ async def epilogue_mcp_slurm_server(
                     job_status,
                 )
             )
-            ctx.info(
+            await ctx.info(
                 "User {} mcp slurm job with job id {} and job name {} is in state {}, check back later.".format(
                     user,
                     job_id_str,
@@ -1498,7 +1509,7 @@ async def epilogue_mcp_slurm_server(
             await lqcd_mcp_servers.add_slurm_mcp_server(backend_mcp_server)
     else:
         lqcd_logger.error("Surm job {} has status {}".format(job_id_str, job_status))
-        ctx.error("Surm job {} has status {}".format(job_id_str, job_status))
+        await ctx.error("Surm job {} has status {}".format(job_id_str, job_status))
         backend_mcp_server.error_message = "Surm job {} has status {}".format(
             job_id_str, job_status
         )
@@ -1520,7 +1531,7 @@ async def get_my_mcp_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
     ctx = get_context()
     user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         return []
     # Get all available mcp slurm servers
@@ -1542,7 +1553,7 @@ async def get_all_mcp_servers(unused: str = "") -> list[cdata.SlurmMcpServer]:
     ctx = get_context()
     user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         return []
     # Get all available mcp slurm servers
@@ -1598,7 +1609,7 @@ async def launch_mcp_server_script_on_slurm(
     # Get user name
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         backend_mcp_server.error_message = (
             "Cannot find username associated with this session."
@@ -1634,7 +1645,7 @@ async def launch_mcp_server_script_on_slurm(
                 mcp_name,
             )
         )
-        ctx.warning(
+        await ctx.warning(
             "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
                 user,
                 submitted_mcp_server.slurm_job_id,
@@ -1663,16 +1674,20 @@ async def launch_mcp_server_script_on_slurm(
     tags={"slurm", "Jlab"},
 )
 async def launch_mcp_server_using_script(
-    mcp_name: str, wait: bool, submission_script: str, base64_content: bool, ctx: ServerContext
+    mcp_name: str,
+    wait: bool,
+    submission_script: str,
+    base64_content: bool,
+    ctx: ServerContext,
 ) -> cdata.SlurmMcpServer:
     """User launch a mcp server on slurm using a complete slurm submission script."""
     if base64_content:
         try:
             # convert to string if it is bytes
-            submission_script = base64.b64decode(submission_script).decode('utf-8')
+            submission_script = base64.b64decode(submission_script).decode("utf-8")
         except Exception as e:
             lqcd_logger.error(f"Failed to decode base64 script: {e}")
-            ctx.error(f"Failed to decode base64 script: {e}")
+            await ctx.error(f"Failed to decode base64 script: {e}")
             backend_mcp_server = cdata.SlurmMcpServer(
                 mcp_name="N/A",
                 url="",
@@ -1721,7 +1736,7 @@ async def launch_mcp_server_using_remote_file(
 
     # Check file is available and readable
     if not os.path.exists(script_file):
-        ctx.error("Script file {} does not exist.".format(script_file))
+        await ctx.error("Script file {} does not exist.".format(script_file))
         lqcd_logger.error("Script file {} does not exist.".format(script_file))
         backend_mcp_server.error_message = "Script file {} does not exist.".format(
             script_file
@@ -1729,7 +1744,7 @@ async def launch_mcp_server_using_remote_file(
         return backend_mcp_server
 
     if not os.access(script_file, os.R_OK):
-        ctx.error("Script file {} is not readable.".format(script_file))
+        await ctx.error("Script file {} is not readable.".format(script_file))
         lqcd_logger.error("Script file {} is not readable.".format(script_file))
         backend_mcp_server.error_message = "Script file {} is not readable.".format(
             script_file
@@ -1742,7 +1757,7 @@ async def launch_mcp_server_using_remote_file(
     # Get user name
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
-        ctx.error("Cannot find username associated with this session.")
+        await ctx.error("Cannot find username associated with this session.")
         lqcd_logger.error("Cannot find username associated with this session.")
         backend_mcp_server.error_message = (
             "Cannot find username associated with this session."
@@ -1774,7 +1789,7 @@ async def launch_mcp_server_using_remote_file(
                 mcp_name,
             )
         )
-        ctx.warning(
+        await ctx.warning(
             "User {} submitted a mcp server with job id {} and job name {} does not match the requested mcp name {}.".format(
                 user,
                 submitted_mcp_server.slurm_job_id,
