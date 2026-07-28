@@ -3,7 +3,8 @@ import httpx
 import requests
 import os
 import json
-from fastapi import FastAPI, Request, HTTPException
+from typing import Any
+from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
 
@@ -14,7 +15,7 @@ from lqcd_logger import lqcd_logger
 from common_data import OIDCAuthInfo
 
 # Global authentication information
-__auth_info: OIDCAuthInfo = None
+__auth_info: OIDCAuthInfo | None = None
 
 
 # Read a json file pointed by en env variable
@@ -88,11 +89,16 @@ def validate_authorized_token(token):
         bool: True if the token is valid, False otherwise.
         dict or None: User data if valid, error info if invalid.
     """
+    if __auth_info is None:
+        lqcd_logger.error("OIDC authentication information is not loaded.")
+        return False, {"message": "OIDC auth info not loaded"}
+
     # Use a simple, low-permission endpoint like 'user' or 'octocat'
     url = __auth_info.token_verify_url
 
     headers = {
         "Authorization": f"Bearer {token}",  # Use Bearer for fine-grained PATs and JWTs
+        "User-Agent": "jlab-lqcd-mcp-proxy/1.0",
     }
 
     try:
@@ -154,7 +160,7 @@ async def get_auth_flow_info():
 
 
 @auth_router.post("/auth/code-exchange")
-async def exchange_auth_code(code: str, code_verifier: str = None):
+async def exchange_auth_code(code: str, code_verifier: str | None = None):
     """Exchanges an authorization code for an OIDC token with optional PKCE verification."""
     if __auth_info is None:
         raise HTTPException(status_code=500, detail="OIDC is not loaded")
@@ -225,3 +231,61 @@ async def poll_auth_token(device_code: str):
             headers={"Accept": "application/json"},
         )
         return resp.json()
+
+
+@auth_router.post("/auth/introspect")
+async def introspect_token(token: str = Body(..., embed=True)):
+    """Validates token, retrieves user identity and expiration details."""
+    if __auth_info is None:
+        raise HTTPException(status_code=500, detail="OIDC is not loaded")
+
+    # 1. Use the existing validate_authorized_token to verify the token and get identity details
+    valid, user_info = validate_authorized_token(token)
+    if not valid:
+        return {"active": False}
+
+    response_data: dict[str, Any] = {"active": True}
+    if isinstance(user_info, dict):
+        response_data.update(user_info)
+
+    # 2. For providers supporting standard introspection (Globus, CILogon),
+    # query their introspection endpoint to get expiration, scope, etc.
+    provider = __auth_info.provider.lower()
+    if provider in ("globus", "cilogon"):
+        if provider == "globus":
+            introspect_url = "https://auth.globus.org/v2/oauth2/token/introspect"
+        else:
+            introspect_url = "https://cilogon.org/oauth2/introspect"
+
+        async with httpx.AsyncClient() as client:
+            data = {
+                "token": token,
+                "client_id": __auth_info.client_id,
+            }
+            if __auth_info.client_secret:
+                data["client_secret"] = __auth_info.client_secret
+
+            try:
+                headers = {"Accept": "application/json"}
+                if __auth_info.client_id and __auth_info.client_secret:
+                    import base64
+                    creds = f"{__auth_info.client_id}:{__auth_info.client_secret}"
+                    encoded_creds = base64.b64encode(creds.encode("utf-8")).decode("utf-8")
+                    headers["Authorization"] = f"Basic {encoded_creds}"
+
+                resp = await client.post(
+                    introspect_url,
+                    data=data,
+                    headers=headers,
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    intro_data = resp.json()
+                    # Merge introspection fields (exp, iat, scope, etc.)
+                    for key in ("exp", "iat", "scope", "client_id", "iss", "sub"):
+                        if key in intro_data:
+                            response_data[key] = intro_data[key]
+            except Exception as e:
+                lqcd_logger.warning(f"Failed to query provider introspection endpoint: {e}")
+
+    return response_data

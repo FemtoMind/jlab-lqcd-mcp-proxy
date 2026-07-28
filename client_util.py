@@ -7,9 +7,12 @@ import asyncio
 import json
 from datetime import timedelta
 from contextlib import AsyncExitStack
+from typing import Any
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from openai import OpenAI
+from pydantic import AnyUrl
+from mcp.types import TextContent, TextResourceContents
 
 from common_data import SlurmMcpServer
 from common_data import FullSystemResource
@@ -77,11 +80,18 @@ def _open_browser_silently(url: str) -> bool:
 
 
 # Create a custom httpx.AsyncClient factory with verify=False
-def _insecure_httpx_client_factory(**kwargs) -> httpx.AsyncClient:
+def _insecure_httpx_client_factory(
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
+    auth: httpx.Auth | None = None,
+    **kwargs,
+) -> httpx.AsyncClient:
     kwargs.setdefault("follow_redirects", True)
-    if not kwargs.get("timeout"):
-        kwargs["timeout"] = httpx.Timeout(30.0, read=300.0)
-    return httpx.AsyncClient(verify=False, **kwargs)
+    if timeout is None and not kwargs.get("timeout"):
+        timeout = httpx.Timeout(30.0, read=300.0)
+    return httpx.AsyncClient(
+        verify=False, headers=headers, timeout=timeout, auth=auth, **kwargs
+    )
 
 
 # LQCD MCP client class
@@ -125,13 +135,13 @@ class LQCDMCPClient:
             )
 
         @property
-        def client(self) -> Client:
+        def client(self) -> Client | None:
             return self.client_handle
 
     def __init__(self, proxy_url: str):
         self.proxy_url = proxy_url
         self.proxy_mcp_url = proxy_url + "/jlab"
-        self.proxy_client: Client = None
+        self.proxy_client: Client | None = None
         self.backend_clients: dict[str, LQCDMCPClient.BackendClient] = {}
         self.slurm_mcp_servers: dict[str, SlurmMcpServer] = {}
         self.exit_stack = AsyncExitStack()
@@ -166,11 +176,23 @@ class LQCDMCPClient:
 
         if self.jlab_run == False:
             lqcd_logger.info("MCP Application is running in an open environment.")
-            self.openai = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=os.getenv("OPENROUTER_API_KEY"),
-                http_client=http_client,
-            )
+            gemini_key = os.getenv("GEMINI_API_KEY")
+            if gemini_key:
+                lqcd_logger.info("Using Google Gemini API endpoint directly.")
+                self.openai = OpenAI(
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    api_key=gemini_key,
+                    http_client=http_client,
+                )
+                self.llm_model = os.getenv("GEMINI_LLM_MODEL") or "gemini-2.5-flash"
+            else:
+                lqcd_logger.info("Using OpenRouter API endpoint.")
+                self.openai = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=os.getenv("OPENROUTER_API_KEY"),
+                    http_client=http_client,
+                )
+                self.llm_model = os.getenv("OPENROUTER_LLM_MODEL") or os.getenv("LLM_MODEL") or "google/gemini-2.5-flash"
         else:
             lqcd_logger.info("MCP Application is running inside Jlab.")
             self.openai = OpenAI(
@@ -178,11 +200,7 @@ class LQCDMCPClient:
                 api_key=os.getenv("JLAB_LLM_KEY"),
                 http_client=http_client,
             )
-
-        # Set LLM model
-        self.llm_model = os.getenv("LLM_MODEL")
-        if self.jlab_run:
-            self.llm_model = os.getenv("JLAB_LLM_MODEL")
+            self.llm_model = os.getenv("JLAB_LLM_MODEL") or ""
 
         # Check if no authentication is needed
         self._trust_client = os.getenv("TRUST_CLIENT", "false").lower() == "true"
@@ -298,11 +316,20 @@ class LQCDMCPClient:
     async def show_computing_resources(self) -> FullSystemResource:
         """Return static information about computing resources."""
 
-        info = await self.proxy_client.session.read_resource("resource://system_info")
+        if self.proxy_client is None:
+            raise Exception("MCP client not initialized")
 
-        system_info: FullSystemResource = FullSystemResource.model_validate_json(
-            info.contents[0].text
+        info = await self.proxy_client.session.read_resource(
+            AnyUrl("resource://system_info")
         )
+
+        resource = info.contents[0]
+        if isinstance(resource, TextResourceContents):
+            system_info: FullSystemResource = FullSystemResource.model_validate_json(
+                resource.text
+            )
+        else:
+            raise ValueError(f"Expected TextResourceContents, got {type(resource)}")
 
         return system_info
 
@@ -311,6 +338,9 @@ class LQCDMCPClient:
         """Return information about user projects and computing resources."""
         tool_name = "get_user_slurm_accounts"
         tool_args = {}
+
+        if self.proxy_client is None:
+            raise Exception("MCP client not initialized")
 
         result = await self.proxy_client.call_tool(tool_name, tool_args)
 
@@ -335,6 +365,7 @@ class LQCDMCPClient:
                 lqcd_logger.error("Failed to obtain access token from OIDC provider.")
                 raise Exception("Failed to authenticate to OIDC provider.")
 
+        client_args: dict[str, Any]
         if self._trust_client:
             client_args = {
                 "url": self.proxy_mcp_url,
@@ -374,7 +405,12 @@ class LQCDMCPClient:
 
         lqcd_logger.debug(f"Connected to Proxy. User Info: {result}")
 
-        user_info_json = result.content[0].text
+        user_info_content = result.content[0]
+        if isinstance(user_info_content, TextContent):
+            user_info_json = user_info_content.text
+        else:
+            user_info_json = "{}"
+
         user_info = json.loads(user_info_json)
         user_account = user_info.get("user_account", "unknown")
         user_id = user_info.get("user_id", "unknown")
@@ -396,7 +432,9 @@ class LQCDMCPClient:
         welcome_message = await self.proxy_client.get_prompt("welcome_user")
 
         # returned message is a jsonrpc response
-        print(welcome_message.messages[0].content.text)
+        welcome_content = welcome_message.messages[0].content
+        if isinstance(welcome_content, TextContent):
+            print(welcome_content.text)
 
         print("")
         resources: FullSystemResource = await self.show_computing_resources()
@@ -616,7 +654,7 @@ class LQCDMCPClient:
         async with self._lock:
             if mcp_name in self.backend_clients:
                 lqcd_logger.info(f"Server {mcp_name} is already connected.")
-                return self.backend_clients[mcp_name]
+                return self.backend_clients[mcp_name].client
 
         # Wait for the server to be ready
         server_status = await self.backend_mcp_server_status(mcp_name)
@@ -701,7 +739,7 @@ class LQCDMCPClient:
         finally:
             self.proxy_client = None
 
-    async def get_proxy_client(self) -> Client:
+    async def get_proxy_client(self) -> Client | None:
         return self.proxy_client
 
     async def get_backend_client(self, mcp_name: str) -> Client | None:
@@ -709,13 +747,10 @@ class LQCDMCPClient:
             if mcp_name not in self.backend_clients:
                 lqcd_logger.error(f"Server {mcp_name} is not connected.")
                 return None
-            return self.backend_clients[mcp_name]
+            return self.backend_clients[mcp_name].client
 
     async def get_proxy_url(self) -> str:
-        return self.proxy_mcpurl
-
-    async def get_mcp_name(self) -> str:
-        return self.mcp_name
+        return self.proxy_mcp_url
 
     async def get_openai_client(self) -> OpenAI:
         return self.openai

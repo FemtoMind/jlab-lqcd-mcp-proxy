@@ -241,45 +241,49 @@ class SlurmSpawner:
             # keep track of cluster name
             cluster_name = ""
             # Read the output line by line
-            for line in result.stdout:
-                tokens = line.strip().split()
-                cluster_name = tokens[0]
-                # remove characters like ''' and '*' from the name
-                cluster_name = cluster_name.replace("'", "").replace("*", "")
-                gres = tokens[2]
-                num_cores = int(tokens[3])
-                memory = int(tokens[4]) / 1000  # Convert MB to GB
-                node_info = tokens[5].split("/")
-                total_num_nodes = int(node_info[3])
-                free_num_nodes = int(node_info[1])
-                used_num_nodes = int(node_info[0])
-                other_num_nodes = int(node_info[2])
-                default_wall_time = tokens[6]
-                wall_time_limit = tokens[7]
+            if result.stdout is not None:
+                for line in result.stdout:
+                    tokens = line.strip().split()
+                    cluster_name = tokens[0]
+                    # remove characters like ''' and '*' from the name
+                    cluster_name = cluster_name.replace("'", "").replace("*", "")
+                    gres = tokens[2]
+                    num_cores = int(tokens[3])
+                    memory = int(tokens[4]) / 1000  # Convert MB to GB
+                    node_info = tokens[5].split("/")
+                    total_num_nodes = int(node_info[3])
+                    free_num_nodes = int(node_info[1])
+                    used_num_nodes = int(node_info[0])
+                    other_num_nodes = int(node_info[2])
+                    default_wall_time = tokens[6]
+                    wall_time_limit = tokens[7]
 
-                if gres.find("null") != -1:
-                    gres = ""
+                    if gres.find("null") != -1:
+                        gres = ""
 
-                if gres.find("gpu") != -1:
-                    cluster_type = "GPU"
-                else:
-                    cluster_type = "CPU"
+                    if gres.find("gpu") != -1:
+                        cluster_type = "GPU"
+                    else:
+                        cluster_type = "CPU"
 
-                partition_info = cdata.FullSystemResource._partition_resource(
-                    partition_name=cluster_name,
-                    type=cluster_type,
-                    num_nodes=total_num_nodes,
-                    num_free_nodes=free_num_nodes,
-                    num_busy_nodes=used_num_nodes,
-                    num_other_nodes=other_num_nodes,
-                    num_cpus_per_node=num_cores,
-                    memory_per_node_gb=memory,
-                    generic_resource=gres,
-                    default_wall_time=default_wall_time,
-                    wall_time_limit=wall_time_limit,
-                )
+                    partition_info = cdata.FullSystemResource._partition_resource(
+                        partition_name=cluster_name,
+                        type=cluster_type,
+                        num_nodes=total_num_nodes,
+                        num_free_nodes=free_num_nodes,
+                        num_busy_nodes=used_num_nodes,
+                        num_other_nodes=other_num_nodes,
+                        num_cpus_per_node=num_cores,
+                        memory_per_node_gb=memory,
+                        generic_resource=gres,
+                        default_wall_time=default_wall_time,
+                        wall_time_limit=wall_time_limit,
+                    )
 
-                system_info.partitions.append(partition_info)
+                    system_info.partitions.append(partition_info)
+            else:
+                lqcd_logger.error("No slurm partitions found.")
+                raise Exception("No slurm partitions found.")
 
             # Wait for the process to complete
             result.wait()
@@ -307,9 +311,13 @@ class SlurmSpawner:
             accounts = []
 
             # read line one after another
-            for line in result.stdout:
-                tokens = line.strip().split()
-                accounts.append(tokens[1])
+            if result.stdout:
+                for line in result.stdout:
+                    tokens = line.strip().split()
+                    accounts.append(tokens[1])
+            else:
+                lqcd_logger.error("No slurm accounts found.")
+                raise Exception("No slurm accounts found.")
 
             # Wait for the process to finish
             result.wait()
@@ -333,18 +341,23 @@ class SlurmSpawner:
                 text=True,
                 shell=True,
             )
+
+            if result.stdout is None:
+                lqcd_logger.error(f"No slurm job information found for job id: {job_id}")
+                raise Exception(f"No slurm job information found for job id: {job_id}")
+
             job_info = result.stdout.read().strip().split()
             result.wait()
         except Exception as e:
             lqcd_logger.error(f"Failed to get slurm job information: {e}")
             return None
 
-        sjob: cdata.SlurmJobInfo = None
+        sjob: cdata.SlurmJobInfo | None = None
 
         state = job_info[1]
         if state == "RUNNING":
             sjob = cdata.SlurmJobInfo(
-                job_id=job_id,
+                job_id=int(job_id),
                 job_name=job_info[0],
                 job_state=state,
                 job_start_time=job_info[3],
@@ -353,7 +366,7 @@ class SlurmSpawner:
             )
         elif state == "PENDING":
             sjob = cdata.SlurmJobInfo(
-                job_id=job_id,
+                job_id=int(job_id),
                 job_name=job_info[0],
                 job_state=state,
                 job_start_time="",
@@ -374,14 +387,18 @@ class SlurmSpawner:
                 shell=True,
             )
 
-            job_info_lines = result.stdout.splitlines()
+            if result.stdout is None:
+                lqcd_logger.error(f"No slurm job information found for job id: {job_id}")
+                raise Exception(f"No slurm job information found for job id: {job_id}")
+
+            job_info_lines = result.stdout.read().splitlines()
             # deal with the first line
             job_info = job_info_lines[0].split(",")
 
             result.wait()
 
             sjob = cdata.SlurmJobInfo(
-                job_id=job_id,
+                job_id=int(job_id),
                 job_name=job_info[2],
                 job_state=job_info[0],
                 job_start_time=job_info[3],
@@ -411,8 +428,16 @@ class SlurmSpawner:
             )
             # read line one after another
             job_states: dict[int, str] = {}
+            if result.stdout is None:
+                lqcd_logger.error(
+                    f"Failed to get slurm job information for job ids: {job_ids_str}"
+                )
+                raise Exception(
+                    f"Failed to get slurm job information for job ids: {job_ids_str}"
+                )
+
             for line in result.stdout:
-                tokens = line.strip().split()
+                tokens = line.strip().split()   
                 if len(tokens) == 2:
                     job_states[int(tokens[0])] = tokens[1]
             # wait for the process to complete
@@ -460,6 +485,14 @@ class SlurmSpawner:
                 text=True,
             )
             result.wait()
+            if result.stdout is None:
+                lqcd_logger.error(
+                    f"Failed to get slurm job information for job id: {job_id}"
+                )
+                raise Exception(
+                    f"Failed to get slurm job information for job id: {job_id}"
+                )
+
             job_state = result.stdout.read().strip()
         except Exception as e:
             lqcd_logger.error(f"Failed to check slurm job: {e}")
@@ -485,7 +518,17 @@ class SlurmSpawner:
             result.wait()
 
             if result.returncode != 0:
-                lqcd_logger.warning(f"Failed to stop slurm job: {result.stderr.read()}")
+                if result.stderr is None:
+                    lqcd_logger.error(
+                        f"Failed to cancel slurm job for job id: {job_id}"
+                    )
+                    raise Exception(
+                        f"Failed to cancel slurm job for job id: {job_id}"
+                    )
+
+                lqcd_logger.warning(
+                    "Failed to stop slurm job: {}".format(result.stderr.read())
+                )
                 ret_status.status = cdata.SlurmJobCancelStatus._status_value.UNKNOWN
                 ret_status.error_message = "Failed to stop slurm job: {}".format(
                     result.stderr.read()
@@ -496,9 +539,17 @@ class SlurmSpawner:
                     f"Successfully executed scancel command for job: {job_id}"
                 )
 
+                if result.stdout is None:
+                    lqcd_logger.error(
+                        f"Failed to get slurm job information for job id: {job_id}"
+                    )
+                    raise Exception(
+                        f"Failed to get slurm job information for job id: {job_id}"
+                    )
+
                 output = result.stdout.read().strip()
                 if output not in (None, ""):  # scancel return nothing if success
-                    lqcd_logger.warning(f"Failed to stop slurm job: {output}")
+                    lqcd_logger.warning("Failed to stop slurm job: {}".format(output))
                     ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
                     ret_status.error_message = "Failed to stop slurm job: {}".format(
                         output
@@ -554,7 +605,7 @@ $cmd
 
         # Fill out the template
         slurm_script = job_script.substitute(
-            job_name=job.job_name,
+            job_name=job.name,
             time=job.time,
             nodes=job.nodes,
             ntasks=job.ntasks,
@@ -662,11 +713,12 @@ $cmd
 
         # check job state
         job_state = await self.check_slurm_job_state(job_id)
-        job_state = job_state.strip()
-        lqcd_logger.debug("Job state: {}".format(job_state))
         if job_state is None:
             lqcd_logger.warning(f"Failed to check slurm job: {job_id}")
             return None
+
+        job_state = job_state.strip()
+        lqcd_logger.debug("Job state: {}".format(job_state))
 
         good_states = ["RUNNING", "PENDING"]
         if job_state in good_states:
@@ -721,27 +773,50 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
     # Retrieve authorization header from request
     user_login = "unknown"
     if hasattr(ctx.request_context, "request"):
+        # get request from request context
+        if ctx.request_context is None:
+            lqcd_logger.warning("Request context is None")
+            return {"user_id": "unknown", "user_account": "unknown"}
+
         req = ctx.request_context.request
+        if req is None:
+            lqcd_logger.warning("Request is None")
+            return {"user_id": "unknown", "user_account": "unknown"}
+
+        # get authorization header
         auth_header = req.headers.get("authorization")
-        if auth_header and auth_header.startswith("Bearer "):
+        if auth_header is None:
+            lqcd_logger.warning("Authorization header is None")
+            return {"user_id": "unknown", "user_account": "unknown"}
+
+        if not auth_header.startswith("Bearer "):
+            lqcd_logger.warning("Authorization header is not Bearer token")
+            return {"user_id": "unknown", "user_account": "unknown"}
+        else:
+            # get token from authorization header
             token = auth_header.split(" ")[1]
             lqcd_logger.debug(f"Token: {token}")
             try:
                 # Reuse our existing validation helper
                 valid, user_info = validate_authorized_token(token)
-                # OIDC provider may return 'sub', 'email', 'eppn', etc.
-                # The debug output shows 'sub' is present, but 'email' is missing despite scope.
-                # We prioritize friendly names if available, but fallback to 'sub'.
-                user_login = (
-                    user_info.get("email")
-                    or user_info.get("preferred_username")
-                    or user_info.get("sub")
-                    or user_info.get("login")
-                    or "unknown"
-                )
-                lqcd_logger.debug(
-                    f"DEBUG: Token validation successful. ID: {user_login}, Info: {user_info}"
-                )
+                if valid and user_info is not None:
+                    # OIDC provider may return 'sub', 'email', 'eppn', etc.
+                    # The debug output shows 'sub' is present, but 'email' is missing despite scope.
+                    # We prioritize friendly names if available, but fallback to 'sub'.
+                    user_login = (
+                        user_info.get("email")
+                        or user_info.get("preferred_username")
+                        or user_info.get("sub")
+                        or user_info.get("login")
+                        or "unknown"
+                    )
+                    lqcd_logger.debug(
+                        f"DEBUG: Token validation successful. ID: {user_login}, Info: {user_info}"
+                    )
+                else:
+                    lqcd_logger.debug(
+                        f"DEBUG: Token validation failed or no user info returned. Info: {user_info}"
+                    )
             except Exception as e:
                 lqcd_logger.debug(f"DEBUG: Token validation failed: {e}")
 
@@ -752,9 +827,6 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
         # Need to register local account to session manager
         await lqcd_session_manager().register(ctx.session_id, "username", local_account)
         lqcd_logger.info(
-            f"Mapped user identity '{user_login}' to local account '{local_account}'."
-        )
-        await ctx.info(
             f"Mapped user identity '{user_login}' to local account '{local_account}'."
         )
     else:
@@ -774,7 +846,9 @@ async def _get_backend_server_by_name(mcp_name: str) -> cdata.SlurmMcpServer:
         all_servers: list[str] = await lqcd_mcp_servers.get_slurm_mcp_server_names()
         lqcd_logger.debug("backend servers ={}".format(all_servers))
 
-    server: cdata.SlurmMcpServer = await lqcd_mcp_servers.get_slurm_mcp_server(mcp_name)
+    server: cdata.SlurmMcpServer | None = await lqcd_mcp_servers.get_slurm_mcp_server(
+        mcp_name
+    )
 
     if server is not None:
         # check the server is really running
@@ -829,11 +903,11 @@ async def welcome_user(ctx: ServerContext) -> str:
 
 # Return resource static information
 @slurm_mcp.resource("resource://system_info")
-async def show_computing_resources(ctx: ServerContext) -> dict:
-    total_resource = await lqcd_slurm_manager.get_slurm_info()
-
+async def show_computing_resources(ctx: ServerContext) -> str:
+    """Return static information about computing resources."""
+    total_resource: cdata.FullSystemResource = await lqcd_slurm_manager.get_slurm_info()
     # fastmcp version 3 cannot return any structured data.
-    # We need to return a dictionary instead.
+    # It only returns a json string.
     return total_resource.to_json()
 
 
@@ -859,7 +933,15 @@ async def get_user_slurm_accounts(unused: str = "") -> cdata.UserComputingAccoun
         )
 
     user_accounts = await lqcd_slurm_manager.get_slurm_accounts(user)
-
+    if user_accounts is None:
+        lqcd_logger.error(f"User '{user}' has no slurm accounts.")
+        await ctx.error(f"User '{user}' has no slurm accounts.")
+        return cdata.UserComputingAccounts(
+            user_name=user,
+            slurm_accounts=["N/A"],
+            valid=False,
+            error_message=f"User {user} has no slurm accounts.",
+        )
     lqcd_logger.debug(f"User '{user}' has slurm accounts: {user_accounts}")
 
     if len(user_accounts) == 0:
@@ -882,11 +964,16 @@ async def get_user_slurm_accounts(unused: str = "") -> cdata.UserComputingAccoun
 # Build a slurm submissition
 async def build_slurm_submission(
     sid: str, user: str, mcp_name: str, ctx: ServerContext
-) -> cdata.SlurmMcpJob | str | None:
+) -> cdata.SlurmMcpJob | cdata.SlurmMcpScriptFile | None:
     """Build a slurm submission script"""
     # get everything related to slurm here
     system_info = await lqcd_slurm_manager.get_slurm_info()
     slurm_accounts = await lqcd_slurm_manager.get_slurm_accounts(user)
+    if slurm_accounts is None:
+        lqcd_logger.error(f"User '{user}' has no slurm accounts.")
+        await ctx.error(f"User '{user}' has no slurm accounts.")
+        return None
+
     if len(slurm_accounts) == 0:
         lqcd_logger.error("User {} does not have any slurm accounts.".format(user))
         await ctx.error("User {} does not have any slurm accounts.".format(user))
@@ -951,7 +1038,7 @@ async def build_slurm_submission(
         return None
 
     # Make sure slurm job name is the mcp name
-    slurm_job.job_name = mcp_name
+    slurm_job.name = mcp_name
 
     return slurm_job
 
@@ -1016,6 +1103,15 @@ async def check_mcp_server_status(
 
     # Noe check the status of the mcp server
     job_state = await lqcd_slurm_manager.check_slurm_job_state(str(job_id))
+    if job_state is None:
+        await ctx.error("Cannot find job state for jobid {}".format(job_id))
+        lqcd_logger.error("Cannot find job state for jobid {}".format(job_id))
+        return cdata.SlurmMcpServer(
+            slurm_job_id=job_id,
+            error_message="Cannot find job state for jobid {}".format(job_id),
+            valid=False,
+        )
+
     if job_state == "RUNNING" and backend_mcp_server.url == "":
         # Not updating the state
         backend_mcp_server.slurm_job_state = "NOT_REGISTERED"
@@ -1032,11 +1128,23 @@ async def check_mcp_server_status(
         backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
             job_id
         )
+
+        if backend_mcp_server is None:
+            await ctx.error("Cannot find mcp server associated with this jobid {}".format(job_id))
+            lqcd_logger.error("Cannot find mcp server associated with this jobid {}".format(job_id))
+            return cdata.SlurmMcpServer(
+                slurm_job_id=job_id,
+                error_message="Cannot find mcp server associated with this jobid {}".format(job_id),
+                valid=False,
+            )
+
+
         # Make sure the backend server has been registered, wait for 40 seconds
         num_retries = 0
         max_retries = 20
         while (
-            backend_mcp_server.slurm_job_state != "RUNNING"
+            backend_mcp_server is not None
+            and backend_mcp_server.slurm_job_state != "RUNNING"
             and num_retries < max_retries
         ):
             await asyncio.sleep(2)
@@ -1307,17 +1415,18 @@ async def submit_mcp_server_as_slurm_job(
         lqcd_logger.info("User {} submitted a slurm job: {}".format(user, jobid))
         await ctx.info("User {} submitted a slurm job: {}".format(user, jobid))
         # check whether the backend server with this jobid is registered
-        backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(jobid)
-
+        backend_mcp_server_1: cdata.SlurmMcpServer | None = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(int(jobid))
+        
         wait_counter = 0
-        while backend_mcp_server is None and wait_counter < 20:
+        while backend_mcp_server_1 is None and wait_counter < 20:
             await asyncio.sleep(2)
-            backend_mcp_server = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
-                jobid
+            backend_mcp_server_1 = await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(
+                int(jobid)
             )
             wait_counter += 1
 
-        if backend_mcp_server is not None:
+        if backend_mcp_server_1 is not None:
+            backend_mcp_server = backend_mcp_server_1
             lqcd_logger.info(
                 "User {} registered a backend mcp server {}".format(
                     user, backend_mcp_server
@@ -1470,12 +1579,14 @@ async def epilogue_mcp_slurm_server(
                 backend_mcp_server.slurm_job_state = job_status
 
             # Now wait for the backend server to be registered
-            backend_mcp_server = None
-            while backend_mcp_server is None:
+            backend_mcp_server_1 = None
+            while backend_mcp_server_1 is None:
                 await asyncio.sleep(2)
-                backend_mcp_server = (
+                backend_mcp_server_1 = (
                     await lqcd_mcp_servers.get_slurm_mcp_server_by_jobid(job_id)
                 )
+
+            backend_mcp_server = backend_mcp_server_1
             # Now the backend server is registered
             lqcd_logger.info(
                 "User {} registered a backend mcp server {}".format(
@@ -1508,6 +1619,7 @@ async def epilogue_mcp_slurm_server(
             # register the backend server
             await lqcd_mcp_servers.add_slurm_mcp_server(backend_mcp_server)
     else:
+        job_status = backend_mcp_server.slurm_job_state
         lqcd_logger.error("Surm job {} has status {}".format(job_id_str, job_status))
         await ctx.error("Surm job {} has status {}".format(job_id_str, job_status))
         backend_mcp_server.error_message = "Surm job {} has status {}".format(

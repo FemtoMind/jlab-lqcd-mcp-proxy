@@ -170,7 +170,7 @@ async def disconnect_mcp_server(mcp_name: str, ctx: ServerContext) -> list[str]:
 
     # update the mcp server list
     all_servers: list[cdata.SlurmMcpServer] = await get_all_mcp_servers()
-    server_info_list:list[MCPServerInfo] = []
+    server_info_list:list[str] = []
 
     # No need to check user information because connected servers already
     # checked user information when building the list.
@@ -180,8 +180,8 @@ async def disconnect_mcp_server(mcp_name: str, ctx: ServerContext) -> list[str]:
             if connected_mcp_servers_set and s.mcp_name in connected_mcp_servers_set:
                 is_connected = True
             
-        server_info = MCPServerInfo.from_slurm_mcp_server(s, connected=is_connected)
-        server_info_list.append(server_info)
+        if is_connected:
+            server_info_list.append(s.mcp_name)
 
     return server_info_list
     
@@ -228,7 +228,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
         # check user again
         user = await lqcd_session_manager().get_resource(sid, "username")
         if user is None:
-            ctx.error("Cannot find username associated with this session.")
+            await ctx.error("Cannot find username associated with this session.")
             lqcd_logger.error("Cannot find username associated with this session.")
             return PrefabApp(
                 title="LQCD Slurm Dashboard",
@@ -250,9 +250,9 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
         # --- Blocking Modal Overlay ---
         with pc.If(Rx("is_launching")):
             with pc.Column(
-                css_class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                cssClass="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
             ):
-                with pc.Card(css_class="w-96 shadow-xl"):
+                with pc.Card(cssClass="w-96 shadow-xl"):
                     with pc.CardHeader():
                         pc.CardTitle(content="Launching Server...")
                     with pc.CardContent():
@@ -262,9 +262,9 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
         # ------------------------------
 
         with pc.Column(gap=2) as header_row:
-            pc.H3(content="LQCD Slurm Proxy Dashboard", css_class="font-serif")
+            pc.H3(content="LQCD Slurm Proxy Dashboard", cssClass="font-serif")
             pc.Lead(content="AmSC FemtoMind Team @ Jlab",align="right", 
-                    css_class="font-serif text-sm text-blue-600 italic")
+                    cssClass="font-serif text-sm text-blue-600 italic")
             
         pc.Separator()
         
@@ -274,8 +274,8 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
         waiting_counter = Rx("launch_waiting_counter")
 
         with pc.Row(gap=2, justify="between", align="center") as idle_nodes_disaplay:
-            pc.Text("Number of Idle Nodes: ", pc.Span(f"{num}", bold=True, css_class="mx-4 text-lg text-blue-600"),
-                    css_class="px-2 rounded-lg")
+            pc.Text("Number of Idle Nodes: ", pc.Span(f"{num}", bold=True, cssClass="mx-4 text-lg text-blue-600"),
+                    cssClass="px-2 rounded-lg")
 
             # Refresh button to fetch the latest Slurm job states
             pc.Button(
@@ -285,13 +285,13 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                 on_click=[
                     CallTool(
                         "get_all_mcp_server_info",
-                        on_success=SetState("mcp_servers", RESULT),
-                        on_error=ShowToast("Failed to refresh status", variant="error"),
+                        onSuccess=SetState("mcp_servers", RESULT),
+                        onError=ShowToast("Failed to refresh status", variant="error"),
                     ),
                     CallTool(
                         "number_of_idle_nodes",
-                        on_success=SetState("idle_nodes", RESULT),
-                        on_error=ShowToast("Failed to get idle node number", variant="error"),
+                        onSuccess=SetState("idle_nodes", RESULT),
+                        onError=ShowToast("Failed to get idle node number", variant="error"),
                     ),
                 ],
             )
@@ -301,7 +301,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                 placeholder="Enter MCP server name...",
                 required=True,
                 maxLength=30,
-                css_class="w-64",
+                cssClass="w-64",
             )
             mcp_name_text = Rx("launch_mcp_name")
             with pc.If(Rx("launch_mcp_name") != ""):
@@ -310,7 +310,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                     variant="default",
                     icon="file-search",
                     on_click=OpenFilePicker(
-                        accept=".sh", on_success=SetState("selected_files", RESULT)
+                        accept=".sh", onSuccess=SetState("selected_files", RESULT)
                     ),
                 )
             with pc.Else():
@@ -337,13 +337,13 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                 "submission_script": Rx("selected_files")[0].data,
                                 "base64_content": True,
                             },
-                            on_success=[
+                            onSuccess=[
                                 AppendState("mcp_servers", RESULT),
                                 SetState("selected_files", None),
                                 SetState("is_launching", RESULT.slurm_job_state != "RUNNING"),
                                 ShowToast("MCP server launched!", variant="success"),
                             ],
-                            on_error=[
+                            onError=[
                                 ShowToast("Launch mcp server failed", variant="error"),
                                 SetState("is_launching", False),
                             ],
@@ -351,24 +351,24 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                         SetInterval(
                             5000,
                             while_=waiting_counter > 0,
-                            on_tick=[
+                            onTick=[
                                 CallTool(
                                     "get_all_mcp_server_info",
-                                    on_success=[
+                                    onSuccess=[
                                         SetState("mcp_servers", RESULT),
                                         SetState(
                                             "launch_waiting_counter",
                                             waiting_counter - 1,
                                         ),
                                     ],
-                                    on_error=[ShowToast("Failed to check server status", variant="error"),
+                                    onError=[ShowToast("Failed to check server status", variant="error"),
                                               SetState("is_launching", False),
                                               SetState("launch_waiting_counter",0),
                                               SetState("launch_mcp_name",""),
                                             ],
                                 ),
                             ],
-                            on_complete=[
+                            onComplete=[
                                 SetState("launch_mcp_name", ""),
                                 SetState("is_launching", False),
                                 ShowToast(
@@ -377,8 +377,8 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                 ),
                                 CallTool(
                                     "number_of_idle_nodes",
-                                    on_success=SetState("idle_nodes", RESULT),
-                                    on_error=ShowToast("Failed to get idle node number", variant="error"),
+                                    onSuccess=SetState("idle_nodes", RESULT),
+                                    onError=ShowToast("Failed to get idle node number", variant="error"),
                                 ),
                             ],
                         ),
@@ -405,21 +405,21 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
             with pc.TableBody():
                 with pc.ForEach("mcp_servers") as s:
                     with pc.TableRow():
-                        pc.TableCell(s.mcp_name)
+                        pc.TableCell(str(s.mcp_name))
                         with pc.TableCell():
                             with pc.If(s.slurm_job_state == "RUNNING"):
-                                pc.Badge(label=s.slurm_job_state, variant="success")
+                                pc.Badge(label=str(s.slurm_job_state), variant="success")
                             with pc.Elif(s.slurm_job_state == "PENDING"):
-                                pc.Badge(label=s.slurm_job_state, variant="info")
+                                pc.Badge(label=str(s.slurm_job_state), variant="info")
                             with pc.Else():
-                                pc.Badge(label=s.slurm_job_state, variant="destructive")
+                                pc.Badge(label=str(s.slurm_job_state), variant="destructive")
 
-                        pc.TableCell(s.slurm_job_id)
+                        pc.TableCell(str(s.slurm_job_id))
                         with pc.TableCell():
                             with pc.If(s.owner == user):
-                                pc.Badge(label=s.owner, variant="success")
+                                pc.Badge(label=str(s.owner), variant="success")
                             with pc.Else():
-                                pc.Badge(label=s.owner, variant="warning")
+                                pc.Badge(label=str(s.owner), variant="warning")
 
                         with pc.TableCell():
                             with pc.If(s.owner == user):
@@ -428,18 +428,18 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                         pc.Button(
                                             label="Connect",
                                             variant="outline",
-                                            css_class="text_blue-500 hover:bg-blue-100 px-1",
+                                            cssClass="text-blue-500 hover:bg-blue-100 px-1",
                                             disabled=True,
                                         )
                                         pc.Button(
                                             label="Disconnect",
                                             variant="outline",
-                                            css_class="text-red-500 hover:bg-red-100 px-1",
+                                            cssClass="text-red-500 hover:bg-red-100 px-1",
                                             on_click=[
                                                 CallTool(
                                                     "disconnect_mcp_server",
                                                     arguments={"mcp_name": s.mcp_name},
-                                                    on_success=[
+                                                    onSuccess=[
                                                         SetState(
                                                             "connected_mcp_servers",
                                                             RESULT,
@@ -460,21 +460,21 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                 CallTool(
                                                     "cancel_mcp_server_by_jobid",
                                                     arguments={"job_id": s.slurm_job_id},
-                                                    on_success=[
+                                                    onSuccess=[
                                                         SetState("connected_server", ""),
                                                         SendMessage(
                                                                 f"Please find and remove the MCP server named '{s.mcp_name}' "
                                                                 f"from my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json)."
                                                             ),
                                                         ],
-                                                    on_error=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
+                                                    onError=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
                                                 ),
                                                 SetInterval(2000,count=1,
-                                                    on_complete=[
+                                                    onComplete=[
                                                         CallTool(
                                                             "get_all_mcp_server_info",
-                                                            on_success=SetState("mcp_servers", RESULT),
-                                                            on_error=ShowToast("Failed to refresh server status", variant="error"),
+                                                            onSuccess=SetState("mcp_servers", RESULT),
+                                                            onError=ShowToast("Failed to refresh server status", variant="error"),
                                                         ),
                                                     ],
                                                 ),
@@ -484,13 +484,13 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                         pc.Button(
                                             label="Connect",
                                             variant="outline",
-                                            css_class="text_blue-500 hover:bg-blue-100 px-1",
+                                            cssClass="text-blue-500 hover:bg-blue-100 px-1",
                                             disabled=(s.slurm_job_state == "PENDING"),
                                             on_click=[
                                                 CallTool(
                                                     "connect_mcp_server",
                                                     arguments={"mcp_name": s.mcp_name},
-                                                    on_success=[
+                                                    onSuccess=[
                                                         SetState(
                                                             "connected_mcp_servers",
                                                             RESULT,
@@ -507,7 +507,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                             variant="success",
                                                         ),
                                                     ],
-                                                    on_error=ShowToast(
+                                                    onError=ShowToast(
                                                         "Failed to connect to MCP server. Please make sure you have added this MCP server to your IDE configuration file and try again.",
                                                         variant="error",
                                                     ),
@@ -517,7 +517,7 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                         pc.Button(
                                             label="Disconnect",
                                             variant="outline",
-                                            css_class="text-red-500 hover:bg-red-100 px-1",
+                                            cssClass="text-red-500 hover:bg-red-100 px-1",
                                             disabled=True,
                                         )
                                         pc.Button(
@@ -528,14 +528,14 @@ async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
                                                 CallTool(
                                                     "cancel_mcp_server_by_jobid",
                                                     arguments={"job_id": s.slurm_job_id},
-                                                    on_error=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
+                                                    onError=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
                                                 ),
                                                 SetInterval(2000,count=1,
-                                                    on_complete=[
+                                                    onComplete=[
                                                         CallTool(
                                                             "get_all_mcp_server_info",
-                                                            on_success=SetState("mcp_servers", RESULT),
-                                                            on_error=ShowToast("Failed to refresh server status", variant="error"),
+                                                            onSuccess=SetState("mcp_servers", RESULT),
+                                                            onError=ShowToast("Failed to refresh server status", variant="error"),
                                                         ),
                                                     ],
                                                 ),

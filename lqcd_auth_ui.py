@@ -4,9 +4,13 @@ import argparse
 import os
 import json
 import httpx
+import time
+import datetime
 from contextlib import AsyncExitStack
+from typing import Any
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from mcp.types import TextContent
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
@@ -128,6 +132,7 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
 
                 if "access_token" in poll_data:
                     console.print("[bold green]✅ Login Successful![/bold green]")
+                    _cache_poll_data(poll_data)
                     return poll_data["access_token"]
                 else:
                     console.print(f"[bold red]Authentication failed:[/bold red] {poll_data}")
@@ -179,6 +184,7 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
 
                         if "access_token" in poll_data:
                             console.print("[bold green]✅ Login Successful![/bold green]")
+                            _cache_poll_data(poll_data)
                             return poll_data["access_token"]
 
                         error = poll_data.get("error")
@@ -196,9 +202,159 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
                     await asyncio.sleep(interval)
 
 
+def get_cache_file_path() -> str:
+    return os.path.expanduser("~/.lqcd_token_cache.json")
+
+
+def load_token_cache() -> dict:
+    path = get_cache_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_token_cache(cache: dict):
+    path = get_cache_file_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(cache, f, indent=4)
+        os.chmod(path, 0o600)  # Keep it private
+    except Exception:
+        pass
+
+
+def get_cached_token_info(token: str) -> dict | None:
+    import hashlib
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    cache = load_token_cache()
+    return cache.get(token_hash)
+
+
+def cache_token_info(token: str, info: dict):
+    import hashlib
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    cache = load_token_cache()
+    
+    # Clean up expired tokens to prevent cache growth
+    now = time.time()
+    cleaned_cache = {}
+    for k, v in cache.items():
+        if v.get("exp", 0) == 0 or v.get("exp", 0) > now:
+            cleaned_cache[k] = v
+            
+    cleaned_cache[token_hash] = info
+    save_token_cache(cleaned_cache)
+
+
+def get_token_info(token: str) -> dict | None:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        import base64
+        import json
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        return json.loads(payload_bytes.decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _cache_poll_data(poll_data: dict):
+    if "access_token" not in poll_data:
+        return
+    token = poll_data["access_token"]
+    expires_in = poll_data.get("expires_in")
+    scope = poll_data.get("scope", "")
+    
+    info = {}
+    if expires_in:
+        info["exp"] = int(time.time()) + int(expires_in)
+        info["iat"] = int(time.time())
+    if scope:
+        info["scope"] = scope
+        
+    id_token = poll_data.get("id_token")
+    if id_token:
+        id_info = get_token_info(id_token)
+        if id_info:
+            for key in ("sub", "email", "preferred_username", "name", "iss"):
+                if key in id_info:
+                    info[key] = id_info[key]
+                    
+    info["active"] = True
+    
+    if info:
+        cache_token_info(token, info)
+
+
+def format_timestamp(epoch: int) -> str:
+    dt_utc = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
+    dt_local = datetime.datetime.fromtimestamp(epoch)
+    return f"{dt_local.strftime('%Y-%m-%d %H:%M:%S')} Local ({dt_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC)"
+
+
+def format_duration(seconds: float) -> str:
+    if seconds <= 0:
+        return "[bold red]Expired[/bold red]"
+    
+    parts = []
+    days = int(seconds // 86400)
+    hours = int((seconds % 86400) // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:
+        parts.append(f"{secs}s")
+        
+    return " ".join(parts)
+
+
+async def introspect_token_via_proxy(proxy_url: str, token: str, verify_ssl: bool) -> dict | None:
+    # First check local cache
+    cached_info = get_cached_token_info(token)
+    if cached_info:
+        exp = cached_info.get("exp")
+        if not exp or exp > time.time():
+            return cached_info
+
+    # Second try local JWT decoding
+    info = get_token_info(token)
+    if info:
+        cache_token_info(token, info)
+        return info
+        
+    # If it's not a JWT, call the proxy's introspect endpoint
+    try:
+        async with httpx.AsyncClient(verify=verify_ssl, timeout=10.0) as client:
+            resp = await client.post(
+                f"{proxy_url}/auth/introspect",
+                json={"token": token}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("active") is not False:
+                    cache_token_info(token, data)
+                    return data
+    except Exception:
+        pass
+    return None
+
 
 def update_mcp_json(
-    proxy_url: str, token: str, transport_type: str, custom_path: str = None
+    proxy_url: str, token: str, transport_type: str, custom_path: str | None = None
 ):
     # Determine correct endpoint based on transport type
     if transport_type == "sse":
@@ -335,18 +491,25 @@ async def verify_local_account(proxy_url: str, token: str, insecure: bool):
         f"\n[bold blue]Verifying local account mapping on proxy...[/bold blue]"
     )
     try:
-        client_args = {
+        client_args: dict[str, Any] = {
             "url": f"{proxy_url}/jlab",
             "headers": {"Authorization": f"Bearer {token}"},
         }
 
         if insecure:
 
-            def _insecure_httpx_client_factory(**kwargs) -> httpx.AsyncClient:
+            def _insecure_httpx_client_factory(
+                headers: dict[str, str] | None = None,
+                timeout: httpx.Timeout | None = None,
+                auth: httpx.Auth | None = None,
+                **kwargs,
+            ) -> httpx.AsyncClient:
                 kwargs.setdefault("follow_redirects", True)
-                if not kwargs.get("timeout"):
-                    kwargs["timeout"] = httpx.Timeout(30.0, read=300.0)
-                return httpx.AsyncClient(verify=False, **kwargs)
+                if timeout is None and not kwargs.get("timeout"):
+                    timeout = httpx.Timeout(30.0, read=300.0)
+                return httpx.AsyncClient(
+                    verify=False, headers=headers, timeout=timeout, auth=auth, **kwargs
+                )
 
             client_args["httpx_client_factory"] = _insecure_httpx_client_factory
 
@@ -361,8 +524,9 @@ async def verify_local_account(proxy_url: str, token: str, insecure: bool):
 
             user_info = None
             if hasattr(result, "content") and len(result.content) > 0:
-                user_info_json = result.content[0].text
-                user_info = json.loads(user_info_json)
+                first_item = result.content[0]
+                if isinstance(first_item, TextContent):
+                    user_info = json.loads(first_item.text)
             elif isinstance(result, dict):
                 user_info = result
             elif hasattr(result, "data"):
@@ -477,7 +641,49 @@ async def main():
             token = await do_login(proxy_url, not args.insecure)
 
 
+    # Show token validity details
+    token_info = await introspect_token_via_proxy(proxy_url, token, not args.insecure)
+    if token_info:
+        exp = token_info.get("exp")
+        if exp:
+            time_left = exp - time.time()
+            console.print(f"\n[bold blue]Token validity period:[/bold blue] Expires at {format_timestamp(exp)} ({format_duration(time_left)} remaining)")
+
     if args.show_token:
+        if token_info:
+            lines = []
+            sub = token_info.get("sub") or token_info.get("login") or token_info.get("username") or token_info.get("email") or token_info.get("preferred_username") or token_info.get("name")
+            if sub:
+                lines.append(f"[bold cyan]User/Subject:[/bold cyan] {sub}")
+            iss = token_info.get("iss")
+            if iss:
+                lines.append(f"[bold cyan]Issuer:[/bold cyan] {iss}")
+            iat = token_info.get("iat")
+            if iat:
+                lines.append(f"[bold cyan]Issued At:[/bold cyan] {format_timestamp(iat)}")
+            exp = token_info.get("exp")
+            if exp:
+                lines.append(f"[bold cyan]Expires At:[/bold cyan] {format_timestamp(exp)}")
+                time_left = exp - time.time()
+                lines.append(f"[bold cyan]Time Remaining:[/bold cyan] {format_duration(time_left)}")
+            scope = token_info.get("scope") or token_info.get("scp")
+            if scope:
+                lines.append(f"[bold cyan]Scope:[/bold cyan] {scope}")
+            active = token_info.get("active")
+            if active is not None:
+                lines.append(f"[bold cyan]Status:[/bold cyan] {'[bold green]Active[/bold green]' if active else '[bold red]Inactive[/bold red]'}")
+            
+            panel_content = "\n".join(lines)
+            panel = Panel(
+                panel_content,
+                title="[bold green]Token Information[/bold green]",
+                expand=False,
+                border_style="green"
+            )
+            console.print(panel)
+        else:
+            console.print("[bold yellow]Token is opaque and introspection was unsuccessful. Validity details cannot be parsed locally.[/bold yellow]")
+
         console.print(f"\n[bold magenta]Your authentication token:[/bold magenta] {token}\n")
         
     update_mcp_json(proxy_url, token, args.transport, args.extra_config)

@@ -242,8 +242,8 @@ if lqcd_mcp_settings.is_fastmcp_version_3 == False:
     _original_list = lqcd_mcp_main._list_tools
 
 
-async def filtered_list_tools(ctx: MiddlewareContext):
-    all_tools = await _original_list(ctx)
+async def filtered_list_tools():
+    all_tools = await _original_list()
     # Return only tools that DON'T have the 'hidden' tag
     return [t for t in all_tools if "internal" not in (t.tags or [])]
 
@@ -358,15 +358,13 @@ async def request_middleware(request: Request, call_next):
     start_time = time.time()
 
     # Log request details
+    client_host = request.client.host if request.client else "unknown"
     lqcd_logger.debug(
-        f"-> Request: {request.method} {request.url.path} from {request.client.host}"
+        f"-> Request: {request.method} {request.url.path} from {client_host}"
     )
-
-    # Need to check the above three things to find out whether there is session id
     if request.method == "DELETE":
-        # Log request details
         lqcd_logger.info(
-            f"-> Request: {request.method} {request.url.path} from {request.client.host}"
+            f"-> DELETE Request: {request.method} {request.url.path} from {client_host}"
         )
 
         lqcd_logger.debug(f"Headers: {dict(request.headers)}")
@@ -443,7 +441,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
 
     # Resolve backend endpoint
     lqcd_logger.debug(f"Resolving backend endpoint for {mcp_name}")
-    backend_server: SlurmMcpServer = await get_cloud_server(mcp_name)
+    backend_server: SlurmMcpServer | None = await get_cloud_server(mcp_name)
     if not backend_server:
         lqcd_logger.error(f"Backend '{mcp_name}' not found")
         return StreamingResponse(
@@ -484,8 +482,8 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
             pass
 
     # keep tracking error and message and status
-    error = None
-    message = None
+    error = "Unknown error"
+    message = "Unknown error occurred during proxying"
     status = 200
 
     # Forward the request with Streaming

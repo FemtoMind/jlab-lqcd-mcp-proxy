@@ -7,10 +7,12 @@ import argparse
 import json
 import logging
 import os
-from urllib import request, response
+from typing import Any
 from dotenv import load_dotenv
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
+from pydantic import AnyUrl
+from mcp.types import TextContent, TextResourceContents
 
 from client_util import LQCDMCPClient
 from common_data import FullSystemResource
@@ -21,7 +23,7 @@ from common_data import SlurmMcpScriptFile
 from lqcd_logger import lqcd_logger
 
 
-BackendMCPClient: Client = None
+BackendMCPClient: Client | None = None
 
 
 # Test all the tools available on the server
@@ -61,7 +63,9 @@ async def call_backend_tools(backend_client: Client) -> str:
 
         lqcd_logger.debug(f"Tool {tool_name} returned: {result}")
 
-        final_text.append(f"Tool {tool_name} output: {result.content[0].text}")
+        first_content = result.content[0] if result.content else None
+        if isinstance(first_content, TextContent):
+            final_text.append(f"Tool {tool_name} output: {first_content.text}")
 
     return "\n".join(final_text)
 
@@ -69,7 +73,7 @@ async def call_backend_tools(backend_client: Client) -> str:
 # handle elicitation
 async def elicitation_handle_method(
     message: str, response_type: type, params, context
-) -> ElicitResult:
+) -> Any:
     print(message)
 
     if response_type.__name__ == "SlurmMcpScriptFile":  # This is a local script file
@@ -101,7 +105,6 @@ async def elicitation_handle_method(
         run_script = input("Run script: ")
         num_nodes = input("Number of nodes: ")
         num_tasks = input("Number of tasks: ")
-        num_cpus = input("Number of CPUs: ")
         num_cpus_per_task = input("Number of CPUs per task: ")
         time = input("Wall clock Time in format DD-HH:MM:SS: ")
         output_dir = input("Output directory: ")
@@ -110,29 +113,32 @@ async def elicitation_handle_method(
             account=account,
             partition=partition,
             run_script=run_script,
-            num_nodes=num_nodes,
-            num_tasks=num_tasks,
-            num_cpus=num_cpus,
-            num_cpus_per_task=num_cpus_per_task,
+            nodes=int(num_nodes),
+            ntasks=int(num_tasks),
+            cpus_per_task=int(num_cpus_per_task),
             time=time,
-            output_dir=output_dir,
+            output=output_dir,
         )
         return job
     else:
         lqcd_logger.error("Unknown response type: {}".format(response_type.__name__))
-        return None
+        return ElicitResult(action="cancel")
 
 
 # Show computing resources
 async def show_computing_resources(proxy_client: Client) -> FullSystemResource:
     """Return static information about computing resources."""
 
-    info = await proxy_client.session.read_resource("resource://system_info")
+    info = await proxy_client.session.read_resource(AnyUrl("resource://system_info"))
     lqcd_logger.debug(f"System resource information:\n {info}")
 
-    system_info: FullSystemResource = FullSystemResource.model_validate_json(
-        info.contents[0].text
-    )
+    resource = info.contents[0]
+    if isinstance(resource, TextResourceContents):
+        system_info: FullSystemResource = FullSystemResource.model_validate_json(
+            resource.text
+        )
+    else:
+        raise ValueError(f"Expected TextResourceContents, got {type(resource)}")
     return system_info
 
 
@@ -141,6 +147,8 @@ async def call_all_proxy_tools(client_manager: LQCDMCPClient) -> str:
     """call all proxy server tools for testing."""
     proxy_client = await client_manager.get_proxy_client()
 
+    if proxy_client is None:
+        raise Exception("Proxy client is None")
     tool_response = await proxy_client.list_tools()
 
     lqcd_logger.debug("response from list_tools: {}".format(tool_response))
@@ -174,7 +182,9 @@ async def call_all_proxy_tools(client_manager: LQCDMCPClient) -> str:
 
         lqcd_logger.debug(f"Tool {tool_name} returned: {result.content}")
 
-        final_text.append(f"Tool {tool_name} output: {result.content[0].text}")
+        first_content = result.content[0] if result.content else None
+        if isinstance(first_content, TextContent):
+            final_text.append(f"Tool {tool_name} output: {first_content.text}")
 
     return "\n".join(final_text)
 
@@ -192,16 +202,18 @@ async def submit_job_test(
 
     lqcd_logger.debug(f"MCP server launched: {mcp_server}")
 
-    return mcp_server
+    return mcp_server.to_json()
 
 
 # Talk to an LLM and the proxy
 async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
     """Get tools from proxy and talk to an LLM to decide what to do next."""
-    messages = [{"role": "user", "content": request}]
+    messages: list[Any] = [{"role": "user", "content": request}]
     global BackendMCPClient
 
     proxy_client = await client_manager.get_proxy_client()
+    if proxy_client is None:
+        raise Exception("Proxy client is None")
     # Get tool response from the server
     tool_response = await proxy_client.list_tools()
     lqcd_logger.debug("response from list_tools: {}".format(tool_response))
@@ -215,7 +227,7 @@ async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
         )
 
     # Build the tool call request
-    available_tools = [
+    available_tools: list[Any] = [
         {
             "type": "function",
             "function": {
@@ -275,11 +287,15 @@ async def get_tool_calls_from_llm(client_manager: LQCDMCPClient, request: str):
 async def handle_tool_calls(
     client_manager: LQCDMCPClient,
     llm_response,
-    messages,
-    backend_tool_names: list[str] = None,
+    messages: list[Any],
+    backend_tool_names: list[str] |None = None,
 ) -> str:
     """Handle tool calls according to LLM response."""
     proxy_client = await client_manager.get_proxy_client()
+
+    if proxy_client is None:
+        raise Exception("Proxy client is None")
+
     llm_model = await client_manager.get_llm_model()
     openai_client = await client_manager.get_openai_client()
 
@@ -382,6 +398,10 @@ async def proxy_llm_loop(client_manager: LQCDMCPClient, mcp_name: str):
                     BackendMCPClient = (
                         await client_manager.connect_to_backend_mcp_server(mcp_name)
                     )
+
+                    if BackendMCPClient is None:
+                        raise Exception("Backend MCP client is None")
+                    
                     tool_response = await BackendMCPClient.list_tools()
                     lqcd_logger.debug(
                         "response from backend list_tools: {}".format(tool_response)
@@ -415,12 +435,16 @@ async def interact_with_proxy(client_manager: LQCDMCPClient, mcp_name: str):
     launch and connect to a backend mcp server.
     """
     proxy_client = await client_manager.get_proxy_client()
+    if proxy_client is None:
+        raise Exception("Proxy client is None")
 
     # Talk to proxy server and get welcome message
     welcome_message = await proxy_client.get_prompt("welcome_user")
 
     # returned message is a jsonrpc response
-    print(welcome_message.messages[0].content.text)
+    welcome_content = welcome_message.messages[0].content
+    if isinstance(welcome_content, TextContent):
+        print(welcome_content.text)
 
     print("")
     resources = await show_computing_resources(proxy_client)

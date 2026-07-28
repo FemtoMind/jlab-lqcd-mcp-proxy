@@ -94,6 +94,9 @@ async def setup_run(proxy_url: str, port: int) -> str:
     # before start, we need to register the server to the proxy server
     job_id = os.getenv("SLURM_JOB_ID")
     mcp_name = os.getenv("SLURM_JOB_NAME")
+    if mcp_name is None:
+        raise ValueError("SLURM_JOB_NAME environment variable is not set.")
+    
     if not job_id is None:
         hostname, ip_address = get_hostname_and_ip_address()
         mcp_url = f"http://{ip_address}:{port}/mcp"

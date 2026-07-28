@@ -26,7 +26,8 @@ def _convert_time_str_to_minutes(time_str) -> int:
 
         # Get the total seconds and convert to minutes
         total_minutes = delta.total_seconds() // 60
-        return total_minutes
+
+        return int(total_minutes)
     except ValueError:
         raise ValueError("Invalid input format. Use 'D-HH:MM:SS' or 'HH:MM:SS'.")
 
@@ -94,7 +95,7 @@ class FullSystemResource(BaseModel):
 
     # Convert to json string
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     # Convert from json string
     @staticmethod
@@ -167,7 +168,7 @@ class SlurmJobInfo(BaseModel):
 
     # Convert to json string
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     # Convert from json string
     @staticmethod
@@ -217,7 +218,7 @@ class UserComputingAccounts(BaseModel):
     error_message: str = Field(description="Error message", default="")
 
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     @staticmethod
     def from_json(json_str: str) -> "UserComputingAccounts":
@@ -263,15 +264,15 @@ class SlurmMcpServer(BaseModel):
         return SlurmMcpServer(**json_data)
 
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
 
 # Slurm job of MCP server
 class SlurmMcpJob(BaseModel):
-    account: str = Field(description="Slurm account")
-    partition: str = Field(description="Slurm partition")
-    name: str = Field(description="Slurm job name is also the MCP name")
-    run_script: str = Field(description="Slurm run script")
+    account: str = Field(description="Slurm account",default="N/A")
+    partition: str = Field(description="Slurm partition",default="N/A")
+    name: str = Field(description="Slurm job name is also the MCP name",default="N/A")
+    run_script: str = Field(description="Slurm run script",default="N/A")
     nodes: int = Field(description="Number of nodes", default=1)
     ntasks: int = Field(description="Number of tasks", default=4)
     cpus_per_task: int = Field(description="Number of cpus per task", default=16)
@@ -285,7 +286,7 @@ class SlurmMcpJob(BaseModel):
         return SlurmMcpJob(**json_data)
 
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     def __str__(self):
         return "\n".join(
@@ -316,7 +317,7 @@ class SlurmMcpScriptFile(BaseModel):
         return SlurmMcpScriptFile(**json_data)
 
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     def __str__(self):
         return "\n".join(
@@ -348,7 +349,7 @@ class SlurmJobCancelStatus(BaseModel):
         return SlurmJobCancelStatus(**json_data)
 
     def to_json(self):
-        return json.dumps(self.dict())
+        return self.model_dump_json()
 
     def __str__(self):
         return "\n".join(
@@ -363,7 +364,7 @@ class SlurmJobCancelStatus(BaseModel):
 # Verify input time format (hh:mm:ss)
 def time_interval_valid(input: str) -> bool:
     pattern = re.compile(r"[0-4][0-8]|[1-9]:[0-5][0-9]:[0-5][0-9]$")
-    return pattern.match(input)
+    return pattern.match(input) is not None
 
 
 # check a string is an integer

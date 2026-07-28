@@ -40,13 +40,13 @@ def get_process_owner() -> str | None:
 async def register_mcp_slurm_server(
     proxy_url: str, mcp_name: str, server_url: str
 ) -> dict | None:
-    owner: str = get_process_owner()
+    owner: str | None = get_process_owner()
     if owner is None:
         print("Error getting process owner")
         return None
     try:
-        job_id: str = os.getenv("SLURM_JOB_ID")
-        job_name: str = os.getenv("SLURM_JOB_NAME")
+        job_id: str | None = os.getenv("SLURM_JOB_ID")
+        job_name: str | None = os.getenv("SLURM_JOB_NAME")
         if job_id is None or job_name is None:
             print("Error getting slurm job id or job name")
             return None

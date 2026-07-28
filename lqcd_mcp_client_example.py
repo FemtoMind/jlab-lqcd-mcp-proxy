@@ -2,17 +2,21 @@
 # through a well known proxy server which is also a mcp server.
 # It uses the MCPClientManager to connect to the proxy and backend servers
 # and then it could talk to a LLM to drive a workflow.
+from mcp.types import TextContent
 import asyncio
 import argparse
 import os
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 from urllib import request, response
 from dotenv import load_dotenv
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
+from pydantic import AnyUrl
+from mcp.types import TextResourceContents
 from client_util import LQCDMCPClient
 from common_data import FullSystemResource
 
@@ -30,12 +34,16 @@ class BinaryInput:
 async def show_computing_resources(proxy_client: Client) -> FullSystemResource:
     """Return static information about computing resources."""
 
-    info = await proxy_client.session.read_resource("resource://system_info")
+    info = await proxy_client.session.read_resource(AnyUrl("resource://system_info"))
     lqcd_logger.debug(f"System resource information:\n {info}")
 
-    system_info: FullSystemResource = FullSystemResource.model_validate_json(
-        info.contents[0].text
-    )
+    resource = info.contents[0]
+    if isinstance(resource, TextResourceContents):
+        system_info: FullSystemResource = FullSystemResource.model_validate_json(
+            resource.text
+        )
+    else:
+        raise ValueError(f"Expected TextResourceContents, got {type(resource)}")
     return system_info
 
 
@@ -46,7 +54,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".client_env"), override=Tru
 # handle elicitation
 async def elicitation_handle_method(
     message: str, response_type: type, params, context
-) -> ElicitResult:
+) -> Any:
     """
     This routiner is used to handle elicitations from server side
     """
@@ -60,6 +68,9 @@ async def elicitation_handle_method(
         a = int(input("Enter a: "))
         b = int(input("Enter b: "))
         return BinaryInput(a=a, b=b)
+    else:
+        lqcd_logger.error(f"Unknown response type: {response_type.__name__}")
+        return ElicitResult(action="cancel")
 
 
 async def main():
@@ -155,12 +166,19 @@ async def main():
 
     # Interact with Proxy
     lqcd_logger.info("\n[Proxy] Listing tools:")
+
+    if proxy_client is None:
+        raise ValueError("Proxy client is None")
+
     proxy_tools = await proxy_client.list_tools()
     for t in proxy_tools:
         lqcd_logger.info(f"  - {t.name}")
 
     # Interact with Backend
     lqcd_logger.info("\n[Backend] Listing tools:")
+
+    if backend_client is None:
+        raise ValueError("Backend client is None")
 
     backend_tools = await backend_client.list_tools()
     for t in backend_tools:
@@ -179,6 +197,9 @@ async def main():
             backend_client = None
             done = True
         elif user_input == "random":
+            if backend_client is None:
+                raise ValueError("Backend client is None")
+
             async with backend_client as cl:
                 tool_name = "generate_random_number"
                 tool_args = {}
@@ -221,6 +242,9 @@ async def main():
                             f"Close the client to the mcp server {args.mcp_name}"
                         )
         elif user_input == "multiply":
+            if backend_client is None:
+                raise ValueError("Backend client is None")
+
             async with backend_client as cl:
                 tool_name = "interactiveMultiplication"
                 tool_args = {}
@@ -263,6 +287,9 @@ async def main():
                             f"Close the client to the mcp server {args.mcp_name}"
                         )
         elif user_input == "remote_exec":
+            if backend_client is None:
+                raise ValueError("Backend client is None")
+
             command = input(">> : ")
             tool_name = "remote_exec"
             tool_args = {"cmd": command}
@@ -270,11 +297,22 @@ async def main():
                 result = await backend_client.call_tool(
                     tool_name, tool_args, timeout=10
                 )
-                output = result.content[0].text
-                lines = output.split("\n")
-                for line in lines:
-                    print(line)
 
+                if result.content is None:
+                    lqcd_logger.error("Tool result is None")
+                    has_error = True
+                else:
+                    first_content = result.content[0]
+                    if isinstance(first_content, TextContent):
+                        output = first_content.text
+                    else:
+                        lqcd_logger.error(
+                            f"Tool result is not TextContent {type(first_content)}"
+                        )
+                        has_error = True
+                    lines = output.split("\n")
+                    for line in lines:
+                        print(line)
             except ToolError as e:
                 lqcd_logger.error(f"Tool error: {e}")
                 has_error = True
