@@ -66,6 +66,49 @@ def _open_browser_silently(url: str) -> bool:
     return res
 
 
+def extract_target_token_data(
+    poll_data: dict,
+    globus_rs_id: str | None = None,
+    globus_rs_scope_suffix: str | None = None,
+) -> dict:
+    if not isinstance(poll_data, dict):
+        return poll_data
+
+    # If neither globus_rs_id nor globus_rs_scope_suffix is specified by the server,
+    # use the primary top-level token (which contains openid scope for OIDC UserInfo validation).
+    if not globus_rs_id and not globus_rs_scope_suffix:
+        return poll_data
+
+    other_tokens = poll_data.get("other_tokens", [])
+    if not other_tokens:
+        return poll_data
+
+    top_rs = poll_data.get("resource_server", "")
+    top_scope = poll_data.get("scope", "")
+
+    if (globus_rs_id and (top_rs == globus_rs_id or globus_rs_id in top_scope)) or (
+        globus_rs_scope_suffix and globus_rs_scope_suffix in top_scope
+    ):
+        return poll_data
+
+    for t in other_tokens:
+        t_rs = t.get("resource_server", "")
+        t_scope = t.get("scope", "")
+        match = False
+        if globus_rs_id and (t_rs == globus_rs_id or globus_rs_id in t_scope):
+            match = True
+        elif globus_rs_scope_suffix and globus_rs_scope_suffix in t_scope:
+            match = True
+
+        if match:
+            res_dict = dict(t)
+            if "id_token" not in res_dict and "id_token" in poll_data:
+                res_dict["id_token"] = poll_data["id_token"]
+            return res_dict
+
+    return poll_data
+
+
 async def do_login(proxy_url: str, verify_ssl: bool) -> str:
     console.print(
         f"[bold blue]Initiating authentication with proxy:[/bold blue] {proxy_url}"
@@ -76,6 +119,8 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
     redirect_uri = ""
     client_id = ""
     scope = ""
+    globus_rs_id = ""
+    globus_rs_scope_suffix = ""
 
     async with httpx.AsyncClient(verify=verify_ssl, timeout=30.0) as client:
         try:
@@ -87,6 +132,8 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
                 redirect_uri = info_data.get("redirect_uri", "")
                 client_id = info_data.get("client_id", "")
                 scope = info_data.get("scope", "")
+                globus_rs_id = info_data.get("globus_rs_id", "")
+                globus_rs_scope_suffix = info_data.get("globus_rs_scope_suffix", "")
         except Exception:
             pass
 
@@ -130,10 +177,13 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
                 res.raise_for_status()
                 poll_data = res.json()
 
-                if "access_token" in poll_data:
+                target_data = extract_target_token_data(
+                    poll_data, globus_rs_id, globus_rs_scope_suffix
+                )
+                if "access_token" in target_data:
                     console.print("[bold green]✅ Login Successful![/bold green]")
-                    _cache_poll_data(poll_data)
-                    return poll_data["access_token"]
+                    _cache_poll_data(target_data)
+                    return target_data["access_token"]
                 else:
                     console.print(f"[bold red]Authentication failed:[/bold red] {poll_data}")
                     raise SystemExit(1)
@@ -182,10 +232,13 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
                         )
                         poll_data = poll.json()
 
-                        if "access_token" in poll_data:
+                        target_data = extract_target_token_data(
+                            poll_data, globus_rs_id, globus_rs_scope_suffix
+                        )
+                        if "access_token" in target_data:
                             console.print("[bold green]✅ Login Successful![/bold green]")
-                            _cache_poll_data(poll_data)
-                            return poll_data["access_token"]
+                            _cache_poll_data(target_data)
+                            return target_data["access_token"]
 
                         error = poll_data.get("error")
                         if error not in ["authorization_pending", "slow_down"]:

@@ -3,6 +3,8 @@ import httpx
 import requests
 import os
 import json
+import time
+import globus_sdk
 from typing import Any
 from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -77,18 +79,99 @@ def get_local_account(user_id: str) -> str | None:
     return __user_account_mapping.get(user_id, None)
 
 
-# Helper function to validate OIDC token
-def validate_authorized_token(token):
+def validate_globus_rs_token(token: str) -> tuple[bool, dict | None]:
     """
-    Validates an  OIDC token by attempting a simple API request.
+    Validates a Globus token using Resource Server (RS) Introspection.
+    Returns (True, user_info) if valid, or (False, error_dict) if invalid/not configured.
+    """
+    if __auth_info is None:
+        return False, None
+    rs_id = __auth_info.globus_rs_id
+    rs_secret = __auth_info.globus_rs_secret
+    scope_suffix = __auth_info.globus_rs_scope_suffix
+    
+    if not rs_id or not rs_secret:
+        lqcd_logger.info("Globus RS ID or Secret is not set.")
+        return False, None
+
+    try:
+        client = globus_sdk.ConfidentialAppAuthClient(rs_id, rs_secret)
+
+        introspect = client.oauth2_token_introspect(
+            token, include="identity_set_detail,session_info"
+        )
+
+        if not introspect.get("active"):
+            lqcd_logger.warning("Globus RS token is not active")
+            return False, {"message": "Globus RS token is inactive"}
+
+        exp = introspect.get("exp")
+        if exp and time.time() >= exp:
+            lqcd_logger.warning("Globus RS token has expired")
+            return False, {"message": "Globus RS token has expired"}
+
+        nbf = introspect.get("nbf")
+        if nbf and time.time() < nbf:
+            lqcd_logger.warning("Globus RS token not yet valid")
+            return False, {"message": "Globus RS token not yet valid"}
+
+        token_scopes = introspect.get("scope", "").split()
+        expected_scope = f"https://auth.globus.org/scopes/{rs_id}/{scope_suffix}" if scope_suffix else None
+        if expected_scope and expected_scope not in token_scopes:
+            lqcd_logger.warning(
+                f"Globus RS token missing required scope: {expected_scope}"
+            )
+            return False, {"message": f"Token missing scope: {expected_scope}"}
+
+        # Extract user identity
+        user_identity = introspect.get("username")
+        session_info = introspect.get("session_info", {})
+        authentications = session_info.get("authentications", {})
+        if not user_identity and authentications:
+            first_auth = next(iter(authentications.values()), {})
+            user_identity = first_auth.get("email") or first_auth.get("username")
+        if not user_identity:
+            user_identity = introspect.get("sub")
+
+        if user_identity:
+            user_info = {
+                "username": user_identity,
+                "email": user_identity if "@" in user_identity else None,
+                "sub": introspect.get("sub"),
+                "preferred_username": user_identity,
+                "globus_introspect": introspect,
+            }
+            lqcd_logger.info(f"Globus RS Token is valid for identity: {user_identity}")
+            return True, user_info
+
+        return False, {"message": "Could not identify Globus user from token"}
+    except Exception as e:
+        lqcd_logger.warning(f"Globus RS Introspection error: {e}")
+        return False, None
+
+
+# Helper function to validate OIDC or Globus RS token
+def validate_authorized_token(token: str):
+    """
+    Validates an OIDC token by trying Globus RS Introspection first (if configured),
+    falling back to OIDC userinfo verification.
 
     Args:
-        token (str): The OIDC token to validate.
+        token (str): The token to validate.
 
     Returns:
-        bool: True if the token is valid, False otherwise.
-        dict or None: User data if valid, error info if invalid.
+        tuple[bool, dict | None]: (is_valid, user_data_or_error_info)
     """
+    token = token.strip()
+    if token.startswith("Bearer "):
+        token = token[len("Bearer ") :].strip()
+
+    # 1. Try Globus RS Introspection if configured
+    is_rs_valid, rs_user_info = validate_globus_rs_token(token)
+    if is_rs_valid and rs_user_info:
+        return True, rs_user_info
+
+    # 2. Fall back to standard OIDC UserInfo validation
     if __auth_info is None:
         lqcd_logger.error("OIDC authentication information is not loaded.")
         return False, {"message": "OIDC auth info not loaded"}
@@ -109,17 +192,18 @@ def validate_authorized_token(token):
             lqcd_logger.info("Token is valid and active.")
             return True, response.json()
         elif response.status_code == 401:
+            lqcd_error_msg = response.json().get("message", "Unauthorized") if response.headers.get("content-type", "").startswith("application/json") else response.text
             lqcd_logger.error(
-                f"Token is invalid or expired: {response.json().get('message', 'Unauthorized')}"
+                f"Token is invalid or expired: {lqcd_error_msg}"
             )
-            return False, response.json()
+            return False, response.json() if response.headers.get("content-type", "").startswith("application/json") else {"message": response.text}
         elif response.status_code == 403:
             # A 403 can mean insufficient scope or rate limiting
-            message = response.json().get("message", "Forbidden")
+            message = response.json().get("message", "Forbidden") if response.headers.get("content-type", "").startswith("application/json") else response.text
             lqcd_logger.error(
                 f"Token is valid but lacks sufficient permissions or is rate-limited: {message}"
             )
-            return False, response.json()
+            return False, response.json() if response.headers.get("content-type", "").startswith("application/json") else {"message": response.text}
         else:
             lqcd_logger.error(
                 f"An unexpected error occurred. Status code: {response.status_code}, Message: {response.text}"
@@ -132,6 +216,29 @@ def validate_authorized_token(token):
     except requests.exceptions.RequestException as e:
         lqcd_logger.error(f"A connection error occurred: {e}")
         return False, None
+
+
+def validate_and_map_user_token(token: str) -> str | None:
+    """
+    Validates token via Globus RS Introspection or OIDC UserInfo,
+    and returns the mapped local Linux account username.
+    """
+    valid, user_info = validate_authorized_token(token)
+    if not valid or not user_info:
+        return None
+
+    user_identity = (
+        user_info.get("username")
+        or user_info.get("email")
+        or user_info.get("preferred_username")
+        or user_info.get("sub")
+        or user_info.get("login")
+    )
+    if not user_identity:
+        return None
+
+    return get_local_account(user_identity)
+
 
 
 # Use fastapi router to define a router to handle authentication here
@@ -156,6 +263,8 @@ async def get_auth_flow_info():
         "redirect_uri": __auth_info.redirect_uri,
         "client_id": __auth_info.client_id,
         "scope": __auth_info.scope,
+        "globus_rs_id": __auth_info.globus_rs_id,
+        "globus_rs_scope_suffix": __auth_info.globus_rs_scope_suffix,
     }
 
 

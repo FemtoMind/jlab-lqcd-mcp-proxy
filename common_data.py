@@ -243,7 +243,15 @@ class OIDCAuthInfo(BaseModel):
     redirect_uri: str | None = Field(
         description="Redirect URI for Auth Code Flow", default=""
     )
-
+    globus_rs_id: str | None = Field(
+        description="Globus Resource Server ID", default=""
+    )
+    globus_rs_secret: str | None = Field(
+        description="Globus Resource Server Secret", default=""
+    )
+    globus_rs_scope_suffix: str | None = Field(
+        description="Globus Resource Server Scope Suffix", default=""
+    )
 
 # Slurm mcp server information
 class SlurmMcpServer(BaseModel):

@@ -1,0 +1,14 @@
+{
+  "authorization_url": "https://auth.globus.org/v2/oauth2/authorize",
+  "token_url": "https://auth.globus.org/v2/oauth2/token",
+  "token_verify_url": "https://auth.globus.org/v2/oauth2/userinfo",
+  "client_id": "2fea8395-fc80-48b6-b93b-a557e22662d3",
+  "client_secret": "",
+  "scope": "openid email profile https://auth.globus.org/scopes/1cbc3307-9e6a-4730-a4b5-9e6d8ec37326/iri_api",
+  "grant_type": "authorization_code",
+  "redirect_uri": "https://auth.globus.org/v2/web/auth-code",
+  "provider": "globus",
+  "globus_rs_id": "1cbc3307-9e6a-4730-a4b5-9e6d8ec37326",
+  "globus_rs_secret": "DQBA5+iHjtvU9PEPcqKlHmblcka5U7ubRF/G7V3NOTQ=",
+  "globus_rs_scope_suffix": "iri_api"
+}
