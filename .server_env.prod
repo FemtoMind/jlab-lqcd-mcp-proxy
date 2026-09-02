@@ -3,13 +3,14 @@ MCP_USE_JLAB_SLURM=true
 # OIDC setting file
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
-LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_globus.json
+#LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_globus.json
+LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_oidc_settings_globus_iri.json
 # Convert user id to local account mapping file
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
 LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_globus.json
 # Integrate with IRI
-IRI_INTEGRATION=false
+IRI_INTEGRATION=true
 IRI_DIR=/usr/local/lqcd_proxy/iri-facility-api-python
 # Use https
 # USE_HTTPS=true
@@ -19,4 +20,4 @@ PROXY_KEY_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
 # Log file
 PROXY_LOG_FILE=/usr/local/lqcd_proxy/logs/server.log
 # Debug mode
-# DEBUG=true
+DEBUG=true
