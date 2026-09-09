@@ -13,10 +13,12 @@ LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_ma
 IRI_INTEGRATION=true
 IRI_DIR=/usr/local/lqcd_proxy/iri-facility-api-python
 # Use https
-# USE_HTTPS=true
+USE_HTTPS=true
 # SSL CERT and Key File
-PROXY_CERT_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/cert.pem
-PROXY_KEY_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
+#PROXY_CERT_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/cert.pem
+#PROXY_KEY_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/key-auth-files/key.pem
+PROXY_CERT_FILE=/usr/local/lqcd_proxy/certificate/fullchain.pem
+PROXY_KEY_FILE=/usr/local/lqcd_proxy/certificate/privkey.pem
 # Log file
 PROXY_LOG_FILE=/usr/local/lqcd_proxy/logs/server.log
 # Debug mode
