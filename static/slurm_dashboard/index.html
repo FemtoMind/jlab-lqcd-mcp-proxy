@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LQCD Slurm MCP Server Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-base: #0b0f19;
+      --bg-surface: #111827;
+      --bg-card: #1f2937;
+      --bg-card-hover: #283548;
+      --border-color: #374151;
+      --border-focus: #3b82f6;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15);
+      --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-surface);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4b5563;
+    }
+
+    /* Header */
+    header {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      padding: 0.85rem 2rem;
+    }
+
+    .header-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: var(--primary-gradient);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 1.1rem;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .logo-title h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .logo-title p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+    }
+
+    .user-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-md);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: #4b5563;
+    }
+
+    .stat-content h3 {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-content .stat-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-top: 4px;
+    }
+
+    .stat-icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+
+    .icon-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .icon-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .icon-purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+    .icon-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+    /* Control Bar */
+    .control-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .filter-tabs {
+      display: flex;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .tab-btn.active {
+      background: var(--bg-card);
+      color: var(--text-main);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--primary-gradient);
+      color: white;
+      box-shadow: var(--shadow-glow);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+    }
+
+    .btn-secondary {
+      background: var(--bg-surface);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card);
+      border-color: #4b5563;
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-sm {
+      padding: 5px 12px;
+      font-size: 0.8rem;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Servers Section */
+    .servers-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .servers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .server-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: var(--shadow-md);
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .server-card:hover {
+      border-color: #4b5563;
+      transform: translateY(-2px);
+    }
+
+    .server-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .server-name {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      word-break: break-all;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .badge-running    { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+    .badge-completing { background: rgba(6, 182, 212, 0.15);  color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.35); }
+    .badge-pending    { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .badge-completed  { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
+    .badge-failed     { background: rgba(239, 68, 68, 0.15);  color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+    .badge-cancelled  { background: rgba(244, 63, 94, 0.15);  color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
+    .badge-timeout    { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
+    .badge-suspended  { background: rgba(129, 140, 248, 0.15); color: #a5b4fc; border: 1px solid rgba(129, 140, 248, 0.35); }
+    .badge-stopped    { background: rgba(107, 114, 128, 0.15); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.35); }
+    .server-card-failed {
+      border-color: rgba(239, 68, 68, 0.55) !important;
+      background: rgba(239, 68, 68, 0.05) !important;
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.18) !important;
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .server-details {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.6rem;
+      background: var(--bg-card);
+      border-radius: var(--radius-md);
+      padding: 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .detail-label {
+      color: var(--text-dim);
+      font-size: 0.72rem;
+    }
+
+    .detail-val {
+      color: var(--text-main);
+      font-weight: 500;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .server-card-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* Empty state */
+    .empty-state {
+      grid-column: 1 / -1;
+      background: var(--bg-surface);
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 4rem 2rem;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-state-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.6;
+    }
+
+    /* Modal dialogs */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      animation: modalSlideIn 0.2s ease-out;
+    }
+
+    .modal-box.large {
+      max-width: 850px;
+    }
+
+    @keyframes modalSlideIn {
+      from { opacity: 0; transform: scale(0.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h2 {
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .modal-footer {
+      padding: 1.25rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      background: var(--bg-card);
+    }
+
+    /* Forms */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    .form-control {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      color: var(--text-main);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    .form-control:focus {
+      border-color: var(--border-focus);
+    }
+
+    textarea.form-control {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    /* Tools Inspection Cards */
+    .tool-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .tool-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .tool-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #60a5fa;
+    }
+
+    .tool-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .tool-params-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.4rem;
+      font-size: 0.78rem;
+    }
+
+    .tool-params-table th, .tool-params-table td {
+      border: 1px solid var(--border-color);
+      padding: 6px 10px;
+      text-align: left;
+    }
+
+    .tool-params-table th {
+      background: var(--bg-surface);
+      color: var(--text-dim);
+    }
+
+    /* Terminal Output */
+    .terminal-box {
+      background: #030712;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: #10b981;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Code Snippet Box */
+    .code-box {
+      background: #030712;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #93c5fd;
+      position: relative;
+      overflow-x: auto;
+      max-height: 320px;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .copy-btn:hover {
+      background: var(--bg-card-hover);
+    }
+
+    /* Toast notification */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      box-shadow: var(--shadow-lg);
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      z-index: 100;
+      animation: toastIn 0.2s ease-out;
+    }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Error Alert */
+    .alert-banner {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Data Table for Regular Jobs */
+    .data-table th, .data-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .data-table tbody tr {
+      transition: background 0.15s ease;
+    }
+    .data-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .data-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="header-container">
+      <div class="logo-group">
+        <div class="logo-icon">⚛</div>
+        <div class="logo-title">
+          <h1>LQCD Slurm MCP Dashboard</h1>
+          <p>Jefferson Lab High Performance Compute Service</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="manualRefresh()" title="Click to refresh immediately and resume auto-refresh">
+          🔄 Refresh (<span id="refresh-timer">30s</span>)
+        </button>
+        <button class="btn btn-primary btn-sm" id="btn-signin" onclick="openAuthModal()" style="display: none;">
+          🔑 Sign In
+        </button>
+        <div class="user-badge" id="user-badge" onclick="openAuthModal()" style="cursor: pointer;" title="Click to change account or view token">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <span id="user-name">Authenticating...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main>
+    <!-- Error / Auth Banner -->
+    <div id="alert-banner" class="alert-banner">
+      <div id="alert-msg" style="display: flex; flex-direction: column; gap: 8px;">
+        <span>Unauthorized or missing token</span>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="openAuthModal()" style="align-self: center; white-space: nowrap;">
+        🔑 Sign In
+      </button>
+    </div>
+
+    <!-- Cluster Overview Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-content">
+          <h3>Idle Compute Nodes</h3>
+          <div class="stat-value" id="stat-idle-nodes">--</div>
+        </div>
+        <div class="stat-icon-wrap icon-emerald">⚡</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-content">
+          <h3>Running MCP Servers</h3>
+          <div class="stat-value" id="stat-running-servers">--</div>
+        </div>
+        <div class="stat-icon-wrap icon-blue">🖥️</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-content">
+          <h3>My Active Jobs</h3>
+          <div id="stat-my-jobs-container" style="display: flex; flex-direction: column; gap: 2px; margin-top: 2px;">
+            <div style="display: flex; align-items: baseline; gap: 6px; font-size: 0.88rem;">
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500; min-width: 55px;">MCP:</span>
+              <strong id="stat-my-mcp-jobs" style="color: #60a5fa; font-size: 1.15rem; font-weight: 700;">--</strong>
+            </div>
+            <div style="display: flex; align-items: baseline; gap: 6px; font-size: 0.88rem;">
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500; min-width: 55px;">Regular:</span>
+              <strong id="stat-my-regular-jobs" style="color: #34d399; font-size: 1.15rem; font-weight: 700;">--</strong>
+            </div>
+          </div>
+        </div>
+        <div class="stat-icon-wrap icon-purple">👤</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-content">
+          <h3>Cluster Partitions</h3>
+          <div class="stat-value" id="stat-partitions">--</div>
+        </div>
+        <div class="stat-icon-wrap icon-amber">📊</div>
+      </div>
+    </div>
+
+    <!-- Main Dashboard Mode Tabs -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; flex-wrap: wrap; gap: 12px;">
+      <div class="filter-tabs" style="font-size: 0.95rem;">
+        <button class="tab-btn active" id="main-tab-mcp" onclick="switchMainTab('mcp')" style="padding: 8px 18px; font-weight: 600;">
+          🖥️ MCP Analysis Servers
+        </button>
+        <button class="tab-btn" id="main-tab-regular" onclick="switchMainTab('regular')" style="padding: 8px 18px; font-weight: 600;">
+          📋 Regular Slurm Jobs
+        </button>
+      </div>
+      <div id="mcp-actions-bar">
+        <button class="btn btn-primary" onclick="openLaunchModal()">
+          ➕ Launch Slurm MCP Server
+        </button>
+      </div>
+      <div id="regular-actions-bar" style="display: none;">
+        <button class="btn btn-primary" onclick="openSubmitRegularModal()">
+          🚀 Submit Regular Slurm Job
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. MCP Servers Section -->
+    <div id="section-mcp-servers">
+      <!-- Actions and Filters Bar -->
+      <div class="control-bar">
+        <div class="filter-tabs">
+          <button class="tab-btn active" id="tab-all" onclick="setFilter('all')">All Servers</button>
+          <button class="tab-btn" id="tab-mine" onclick="setFilter('mine')">My Servers</button>
+        </div>
+      </div>
+
+      <div class="servers-section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h2 class="section-title">Active MCP Backend Servers</h2>
+          <span style="font-size: 0.85rem; color: var(--text-muted);" id="server-count-label">0 servers found</span>
+        </div>
+
+        <div class="servers-grid" id="servers-grid">
+          <!-- Rendered via JS -->
+          <div class="empty-state">
+            <div class="empty-state-icon">📡</div>
+            <h3>Loading Slurm MCP servers...</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Regular Slurm Jobs Section -->
+    <div id="section-regular-jobs" style="display: none;">
+      <div class="servers-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <div>
+            <h2 class="section-title" style="margin-bottom: 2px;">Regular Slurm Batch Jobs</h2>
+            <span style="font-size: 0.85rem; color: var(--text-muted);" id="regular-job-count-label">0 jobs found</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadRegularJobs()">🔄 Refresh Jobs</button>
+        </div>
+
+        <div class="table-responsive" style="overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+          <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.02); color: var(--text-muted);">
+                <th style="padding: 12px 16px;">Job ID</th>
+                <th style="padding: 12px 16px;">Job Name</th>
+                <th style="padding: 12px 16px;">Partition</th>
+                <th style="padding: 12px 16px;">State</th>
+                <th style="padding: 12px 16px;">Time (Used / Limit)</th>
+                <th style="padding: 12px 16px;">Nodes / Info</th>
+                <th style="padding: 12px 16px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="regular-jobs-tbody">
+              <tr>
+                <td colspan="7" style="padding: 32px; text-align: center; color: var(--text-muted);">
+                  Loading regular Slurm jobs...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 1. Modal: Launch New MCP Server -->
+  <div class="modal-overlay" id="modal-launch">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>🚀 Launch Slurm MCP Server</h2>
+        <button class="modal-close" onclick="closeModal('modal-launch')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="launch-name">MCP Server Name (<code>mcp_name</code> identifier) *</label>
+          <input type="text" id="launch-name" class="form-control" placeholder="e.g. lqcd_analysis_gpu, mcp_llama3" required>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">
+            Required unique identifier used to register, manage, and route MCP client requests to this server instance (via <code>/cloud/&lt;mcp_name&gt;</code>).
+          </span>
+        </div>
+
+        <!-- Mode selection toggle -->
+        <div class="form-group">
+          <label>Submission Mode</label>
+          <div class="filter-tabs" style="width: 100%; display: grid; grid-template-columns: 1fr 1fr; padding: 3px;">
+            <button type="button" class="tab-btn active" id="tab-launch-content-btn" onclick="switchLaunchTab('content')" style="text-align: center; padding: 8px 12px;">
+              💻 Upload or Paste Script
+            </button>
+            <button type="button" class="tab-btn" id="tab-launch-path-btn" onclick="switchLaunchTab('path')" style="text-align: center; padding: 8px 12px;">
+              🖥️ Cluster Script Path
+            </button>
+          </div>
+        </div>
+
+        <!-- Option 1: Upload / Paste Script Content -->
+        <div id="launch-panel-content" style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+              <label for="launch-script-content">Slurm Batch Script (Bash / #SBATCH directives) *</label>
+              <div style="display: flex; gap: 6px;">
+                <input type="file" id="local-script-file-input" accept=".sh,.bash,.slurm,.txt" style="display: none;" onchange="handleLocalFileSelect(event)">
+                <button class="btn btn-sm btn-primary" type="button" onclick="document.getElementById('local-script-file-input').click()" style="font-size: 0.8rem; padding: 4px 10px;">
+                  📂 Choose File from Computer...
+                </button>
+                <button class="btn btn-sm btn-secondary" type="button" onclick="loadSampleScript()" style="font-size: 0.8rem; padding: 4px 10px;">
+                  📄 Load Template
+                </button>
+              </div>
+            </div>
+            <textarea id="launch-script-content" class="form-control" style="min-height: 220px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;" placeholder="#!/bin/bash&#10;#SBATCH --partition=24s&#10;#SBATCH --time=02:00:00&#10;#SBATCH --nodes=1&#10;#SBATCH --ntasks=1&#10;#SBATCH --cpus-per-task=4&#10;&#10;# Load environment and start MCP server&#10;python3 /path/to/server.py"></textarea>
+            <span style="font-size: 0.78rem; color: var(--text-muted);" id="file-selection-hint">
+              You can click <strong>"Choose File from Computer..."</strong> to select any <code>.sh</code> script from your machine, or paste/edit code directly.
+            </span>
+          </div>
+        </div>
+
+        <!-- Option 2: Cluster Script Path -->
+        <div id="launch-panel-path" style="display: none; flex-direction: column; gap: 10px;">
+          <div class="form-group">
+            <label for="launch-script-path">Path to Script on Cluster Filesystem *</label>
+            <input type="text" id="launch-script-path" class="form-control" placeholder="/home/username/scripts/run_mcp_server.sh">
+            <span style="font-size: 0.78rem; color: var(--text-muted);">
+              Specify the absolute path to a Slurm batch script located on the cluster filesystem (e.g. <code>/home/username/...</code> or <code>/scratch/...</code>).
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-launch')">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-launch" onclick="submitLaunchServer()">
+          Submit Slurm Job
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Modal: View Tools for Backend MCP Server -->
+  <div class="modal-overlay" id="modal-tools">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>🛠️ Available Tools: <span id="tools-mcp-name" style="color: #60a5fa;">--</span></h2>
+        <button class="modal-close" onclick="closeModal('modal-tools')">&times;</button>
+      </div>
+      <div class="modal-body" id="tools-modal-body">
+        <p style="color: var(--text-muted);">Querying tools from running backend MCP server...</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-tools')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Modal: Copy MCP Config Snippet -->
+  <div class="modal-overlay" id="modal-config">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>📋 MCP Client Configuration: <span id="config-mcp-name" style="color: #60a5fa;">--</span></h2>
+        <button class="modal-close" onclick="closeModal('modal-config')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Option 1: Coding Agent Self-Config -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 14px;">
+          <div style="margin-bottom: 6px;">
+            <strong style="color: #6ee7b7; font-size: 0.9rem;">🤖 Option 1: Coding Agent Configuration Prompts (VS Code / Antigravity / Cursor)</strong>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px;">
+            Copy and paste these prompts directly to your AI coding assistant:
+          </p>
+
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 0.8rem; font-weight: 600; color: #a7f3d0;">➕ Add to Workspace Config:</span>
+              <button class="btn btn-sm btn-secondary" onclick="copyCode('chat-agent-config-snippet')" style="font-size: 0.75rem; padding: 2px 8px;">Copy Prompt</button>
+            </div>
+            <div class="code-box" style="padding: 8px 12px; max-height: none;">
+              <pre id="chat-agent-config-snippet" style="color: #a7f3d0; font-weight: 500;">Loading prompt...</pre>
+            </div>
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 0.8rem; font-weight: 600; color: #fca5a5;">➖ Remove from Workspace Config:</span>
+              <button class="btn btn-sm btn-secondary" onclick="copyCode('chat-agent-remove-snippet')" style="font-size: 0.75rem; padding: 2px 8px;">Copy Prompt</button>
+            </div>
+            <div class="code-box" style="padding: 8px 12px; max-height: none;">
+              <pre id="chat-agent-remove-snippet" style="color: #fca5a5; font-weight: 500;">Loading prompt...</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Option 2: Config file -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="color: var(--text-main); font-size: 0.9rem;">⚙️ Option 2: Direct Client JSON Configuration</strong>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-muted); cursor: pointer;">
+              <input type="checkbox" id="config-include-token-chk" onchange="toggleConfigTokenSnippet()" checked>
+              Include current Auth Token
+            </label>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label>VS Code / Codex / Antigravity IDE (<code>.vscode/mcp.json</code> or <code>mcp_config.json</code>)</label>
+            <div class="code-box">
+              <button class="copy-btn" onclick="copyCode('vscode-config-snippet')">Copy</button>
+              <pre id="vscode-config-snippet">// Loading...</pre>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Claude Desktop (<code>claude_desktop_config.json</code>)</label>
+            <div class="code-box">
+              <button class="copy-btn" onclick="copyCode('claude-config-snippet')">Copy</button>
+              <pre id="claude-config-snippet">// Loading...</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-config')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Modal: View Slurm Logs -->
+  <div class="modal-overlay" id="modal-logs">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>📜 Job Logs: Slurm Job <span id="logs-job-id" style="color: #60a5fa;">--</span></h2>
+        <button class="modal-close" onclick="closeModal('modal-logs')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="terminal-box" id="terminal-logs">Loading log output...</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-logs')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Modal: Authentication / Sign In -->
+  <div class="modal-overlay" id="modal-auth">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>🔑 Dashboard Authentication</h2>
+        <button class="modal-close" onclick="closeModal('modal-auth')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.9rem; color: var(--text-muted);">
+          Authenticate your browser session with Jefferson Lab LQCD services using Globus / OIDC or an access token.
+        </p>
+
+        <div style="display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+          <button class="btn btn-sm btn-secondary auth-tab-btn active" id="tab-auth-globus-btn" onclick="switchAuthTab('globus')">
+            🌐 Globus / Institutional Login
+          </button>
+          <button class="btn btn-sm btn-secondary auth-tab-btn" id="tab-auth-manual-btn" onclick="switchAuthTab('manual')">
+            📋 Paste Token / Ticket
+          </button>
+        </div>
+
+        <!-- Globus / OIDC Flow Panel -->
+        <div id="auth-panel-globus" style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="font-size: 0.88rem; color: var(--text-dim);">
+            Click below to initiate login via Globus Auth. You will be prompted to authenticate with your institutional account.
+          </div>
+          <button class="btn btn-primary" id="btn-start-globus" onclick="startGlobusAuthFlow()" style="justify-content: center;">
+            🚀 Open Globus Login Window
+          </button>
+
+          <!-- Step 2 (for auth code / PKCE) -->
+          <div id="globus-code-exchange-panel" style="display: none; flex-direction: column; gap: 8px; margin-top: 6px;">
+            <label style="font-size: 0.85rem; font-weight: 500; color: #60a5fa;">
+              Step 2: Enter Authorization Code from Globus
+            </label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="globus-auth-code-input" class="form-control" placeholder="Paste authorization code here..." style="flex: 1;" />
+              <button class="btn btn-primary" id="btn-exchange-code" onclick="completeGlobusCodeExchange()">Verify & Sign In</button>
+            </div>
+          </div>
+
+          <!-- Polling indicator (for device flow) -->
+          <div id="globus-device-polling-panel" style="display: none; flex-direction: column; gap: 8px; align-items: center; padding: 12px; background: var(--bg-card); border-radius: var(--radius-md);">
+            <div class="pulse-dot" style="background: #60a5fa;"></div>
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Waiting for approval in browser... Code: <strong id="globus-device-code-display" style="color: #fbbf24;"></strong></span>
+          </div>
+        </div>
+
+        <!-- Manual Token Panel -->
+        <div id="auth-panel-manual" style="display: none; flex-direction: column; gap: 12px;">
+          <div class="form-group">
+            <label>Access Token / Ticket</label>
+            <input type="password" id="manual-modal-token-input" class="form-control" placeholder="Paste your OIDC access token or ticket..." />
+            <span style="font-size: 0.78rem; color: var(--text-muted);">
+              You can copy your token from the American Science Cloud portal or from <code>~/.lqcd_token_cache.json</code>.
+            </span>
+          </div>
+          <button class="btn btn-primary" onclick="applyModalManualToken()" style="justify-content: center;">
+            Apply Token & Connect
+          </button>
+        </div>
+
+        <!-- Current Status & Sign Out -->
+        <div id="auth-current-status" style="display: none; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">Current User: <strong id="auth-modal-user" style="color: var(--text-main);"></strong></span>
+          <button class="btn btn-danger btn-sm" onclick="signOut()">Sign Out</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-auth')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Submit Regular Slurm Job -->
+  <div class="modal-overlay" id="modal-submit-regular">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>🚀 Submit Regular Slurm Job</h2>
+        <button class="modal-close" onclick="closeModal('modal-submit-regular')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="regular-job-name">Slurm Job Name (<code>job_name</code>) *</label>
+          <input type="text" id="regular-job-name" class="form-control" placeholder="e.g. lqcd_batch_run_01" required>
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+            <label for="regular-script-content">Slurm Batch Script (Bash / #SBATCH directives) *</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="file" id="regular-local-script-input" accept=".sh,.bash,.slurm,.txt" style="display: none;" onchange="handleRegularFileSelect(event)">
+              <button class="btn btn-sm btn-primary" type="button" onclick="document.getElementById('regular-local-script-input').click()" style="font-size: 0.8rem; padding: 4px 10px;">
+                📂 Choose File...
+              </button>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="loadRegularSampleScript('cpu')" style="font-size: 0.8rem; padding: 4px 10px;">
+                📄 CPU Batch Template
+              </button>
+              <button class="btn btn-sm btn-secondary" type="button" onclick="loadRegularSampleScript('gpu')" style="font-size: 0.8rem; padding: 4px 10px;">
+                ⚡ GPU Template
+              </button>
+            </div>
+          </div>
+          <textarea id="regular-script-content" class="form-control" style="min-height: 250px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;" placeholder="#!/bin/bash&#10;#SBATCH --job-name=my_job&#10;#SBATCH --partition=24s&#10;#SBATCH --time=01:00:00&#10;#SBATCH --nodes=1&#10;#SBATCH --ntasks=1&#10;#SBATCH --cpus-per-task=4&#10;&#10;echo &quot;Starting regular Slurm job on $(hostname) at $(date)&quot;&#10;# Add your application commands here&#10;srun hostname&#10;echo &quot;Job completed at $(date)&quot;"></textarea>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">
+            Provide a valid bash script beginning with <code>#!/bin/bash</code> and your desired <code>#SBATCH</code> options.
+          </span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-submit-regular')">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-regular" onclick="submitRegularJob()">
+          🚀 Submit Slurm Job
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Regular Job Logs -->
+  <div class="modal-overlay" id="modal-regular-logs">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>📄 Job Output Logs: <span id="regular-log-title" style="color: #60a5fa;">--</span></h2>
+        <button class="modal-close" onclick="closeModal('modal-regular-logs')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <span id="regular-log-path" style="font-size: 0.8rem; color: var(--text-muted); word-break: break-all;">Log file path: --</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-secondary" onclick="refreshRegularLogs()">🔄 Refresh</button>
+            <button class="btn btn-sm btn-secondary" onclick="copyCode('regular-log-content')">📋 Copy</button>
+          </div>
+        </div>
+        <div class="code-box" style="max-height: 450px;">
+          <pre id="regular-log-content">// Loading logs...</pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-regular-logs')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast">
+    <span id="toast-icon">✅</span>
+    <span id="toast-msg">Action completed</span>
+  </div>
+
+  <script>
+    // Global State & Configuration
+    let authToken = "";
+    let currentUser = "";
+    let allServers = [];
+    let activeFilter = "all";
+
+    // Polling & Auto-Pause Settings
+    const POLL_INTERVAL_SECONDS = 30;     // Standard background poll frequency (30s)
+    const MAX_AUTO_REFRESH_CYCLES = 10;   // Max continuous cycles before auto-pause (10 * 30s = 5 mins)
+    let refreshCountdown = POLL_INTERVAL_SECONDS;
+    let autoRefreshCyclesRemaining = MAX_AUTO_REFRESH_CYCLES;
+    let isAutoRefreshPaused = false;
+    let refreshInterval = null;
+
+    // Post-Submission Burst Monitoring
+    let monitoredJobs = new Map(); // jobId -> { mcp_name, attempts, maxAttempts }
+    let burstMonitorInterval = null;
+
+    const API_BASE = window.location.origin + "/jlab/lqcd/mcp/dashboard";
+
+    // Initialize on page load
+    document.addEventListener("DOMContentLoaded", () => {
+      // 1. Resolve Auth Ticket / Token
+      const urlParams = new URLSearchParams(window.location.search);
+      const tokenParam = urlParams.get("token");
+      if (tokenParam) {
+        authToken = tokenParam;
+        sessionStorage.setItem("mcp_dashboard_token", tokenParam);
+      } else {
+        authToken = sessionStorage.getItem("mcp_dashboard_token") || "";
+      }
+
+      // 2. Fetch Initial Status & Data
+      fetchDashboardData();
+
+      // 3. Start Auto-Refresh Timer
+      startAutoRefresh();
+    });
+
+    function getAuthHeaders() {
+      const headers = { "Content-Type": "application/json" };
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+      return headers;
+    }
+
+    async function fetchDashboardData() {
+      try {
+        const querySuffix = authToken ? `?token=${encodeURIComponent(authToken)}` : "";
+
+        // Status request
+        const statusRes = await fetch(`${API_BASE}/status${querySuffix}`, {
+          headers: getAuthHeaders()
+        });
+
+        if (statusRes.status === 401) {
+          if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+          }
+          const timerEl = document.getElementById("refresh-timer");
+          if (timerEl) timerEl.textContent = "Paused";
+          document.getElementById("btn-signin").style.display = "inline-flex";
+          document.getElementById("user-badge").style.display = "none";
+          showAlert(`
+            <span>⚠️ <strong>Authentication required.</strong> Sign in with Globus or paste your access token to view cluster resources.</span>
+            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+              <button class="btn btn-sm btn-primary" onclick="openAuthModal()">🔑 Sign In with Globus / Token</button>
+            </div>
+          `, true);
+          return;
+        }
+
+        // Hide alert if successful
+        hideAlert();
+        document.getElementById("btn-signin").style.display = "none";
+        document.getElementById("user-badge").style.display = "flex";
+
+        const statusData = await statusRes.json();
+        if (statusData.user) {
+          currentUser = statusData.user;
+          document.getElementById("user-name").textContent = currentUser;
+          document.getElementById("user-avatar").textContent = currentUser.charAt(0).toUpperCase();
+        }
+
+        if (statusData.status === "success") {
+          document.getElementById("stat-idle-nodes").textContent = statusData.idle_nodes;
+          document.getElementById("stat-partitions").textContent = (statusData.partitions || []).length;
+
+          // Populate partition & account dropdowns
+          const partSelect = document.getElementById("launch-partition");
+          if (partSelect && statusData.partitions && statusData.partitions.length > 0) {
+            partSelect.innerHTML = statusData.partitions.map(p => 
+              `<option value="${p.partition_name}">${p.partition_name} (${p.num_free_nodes}/${p.total_nodes} free)</option>`
+            ).join("");
+          }
+
+          const accSelect = document.getElementById("launch-account");
+          if (accSelect && statusData.accounts && statusData.accounts.length > 0) {
+            accSelect.innerHTML = statusData.accounts.map(a => 
+              `<option value="${a}">${a}</option>`
+            ).join("");
+          }
+        } else if (statusData.status === "error") {
+          showToast(`⚠️ Cluster status warning: ${statusData.error || "Unknown"}`);
+        }
+
+        // Servers list request
+        const serversRes = await fetch(`${API_BASE}/servers${querySuffix}`, {
+          headers: getAuthHeaders()
+        });
+        const serversData = await serversRes.json();
+
+        if (serversData.status === "success") {
+          allServers = serversData.servers || [];
+          renderServers();
+        }
+
+        // Regular jobs list request
+        try {
+          const regRes = await fetch(`${API_BASE}/regular-jobs${querySuffix}`, {
+            headers: getAuthHeaders()
+          });
+          const regData = await regRes.json();
+          if (regData.status === "success") {
+            allRegularJobs = regData.jobs || [];
+            if (currentMainTab === "regular") {
+              renderRegularJobs(allRegularJobs);
+            }
+          }
+        } catch (e) {
+          console.error("Regular jobs fetch error:", e);
+        }
+
+        updateServerStats();
+
+        refreshCountdown = POLL_INTERVAL_SECONDS;
+      } catch (err) {
+        console.error("Dashboard fetch error:", err);
+      }
+    }
+
+    function updateServerStats() {
+      const runningCount = allServers.filter(s => s.state === "RUNNING").length;
+      const myMcpCount = allServers.filter(
+        s => s.owner === currentUser && ["RUNNING", "PENDING"].includes(s.state)
+      ).length;
+      const myRegularCount = allRegularJobs.filter(
+        j => j.is_active || ["RUNNING", "PENDING"].includes((j.state || "").toUpperCase())
+      ).length;
+
+      document.getElementById("stat-running-servers").textContent = runningCount;
+      const mcpEl = document.getElementById("stat-my-mcp-jobs");
+      if (mcpEl) mcpEl.textContent = `${myMcpCount}`;
+      const regEl = document.getElementById("stat-my-regular-jobs");
+      if (regEl) regEl.textContent = `${myRegularCount}`;
+    }
+
+    function setFilter(filter) {
+      activeFilter = filter;
+      document.getElementById("tab-all").classList.toggle("active", filter === "all");
+      document.getElementById("tab-mine").classList.toggle("active", filter === "mine");
+      renderServers();
+      resetActivityTimer();
+    }
+
+    function renderServers() {
+      const grid = document.getElementById("servers-grid");
+      const filtered = allServers.filter(s => {
+        if (activeFilter === "mine") return s.owner === currentUser;
+        return true;
+      });
+
+      document.getElementById("server-count-label").textContent = `${filtered.length} servers found`;
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🖥️</div>
+            <h3>No ${activeFilter === "mine" ? "user-owned" : ""} MCP servers active</h3>
+            <p style="margin-top: 8px; font-size: 0.9rem;">Click "Launch Slurm MCP Server" to start one.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(s => {
+        const isRunning = (s.state === "RUNNING");
+        const isPending = (s.state === "PENDING");
+        const isFailed = (s.state === "FAILED" || s.state === "CANCELLED" || s.state === "TIMEOUT" || s.state === "NODE_FAIL");
+        const stateClass = isRunning ? "badge-running" :
+                           isPending ? "badge-pending" :
+                           isFailed ? "badge-failed" : "badge-stopped";
+
+        const isOwner = (s.owner === currentUser || currentUser === "root");
+
+        return `
+          <div class="server-card ${isFailed ? 'server-card-failed' : ''}">
+            <div class="server-card-header">
+              <div class="server-name">
+                <span>🖥️</span>
+                <span>${escapeHtml(s.mcp_name)}</span>
+              </div>
+              <span class="badge ${stateClass}">
+                <span class="pulse-dot"></span>
+                ${s.state}
+              </span>
+            </div>
+
+            <div class="server-details">
+              <div class="detail-item">
+                <span class="detail-label">Slurm Job ID</span>
+                <span class="detail-val">${s.job_id || "N/A"}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Owner</span>
+                <span class="detail-val">${escapeHtml(s.owner || "unknown")}</span>
+              </div>
+              ${(s.job_name && s.job_name !== s.mcp_name) ? `
+              <div class="detail-item" style="grid-column: span 2;">
+                <span class="detail-label">Script / Slurm Job</span>
+                <span class="detail-val" style="font-size: 0.75rem; word-break: break-all;">${escapeHtml(s.job_name)}</span>
+              </div>
+              ` : ''}
+              <div class="detail-item">
+                <span class="detail-label">Assigned Node</span>
+                <span class="detail-val">${escapeHtml(s.node || "Pending")}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Assigned Port</span>
+                <span class="detail-val">${s.port || "Pending"}</span>
+              </div>
+            </div>
+
+            <div class="server-card-actions">
+              <button class="btn btn-secondary btn-sm" onclick="viewTools('${escapeHtml(s.mcp_name)}')" ${!isRunning ? 'disabled title="Tools available when running"' : ''}>
+                🛠️ View Tools
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="showMcpConfig('${escapeHtml(s.mcp_name)}')">
+                📋 Config
+              </button>
+              <button class="btn ${isFailed ? 'btn-danger' : 'btn-secondary'} btn-sm" onclick="viewLogs(${s.job_id})">
+                📜 ${isFailed ? 'View Failure Logs' : 'Logs'}
+              </button>
+              ${isOwner ? `
+                <button class="btn btn-danger btn-sm" onclick="cancelServer('${escapeHtml(s.mcp_name)}', ${s.job_id})">
+                  ⏹️ Stop
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Modal Handlers
+    let activeLaunchTab = "content";
+
+    function openLaunchModal() {
+      resetActivityTimer();
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      document.getElementById("launch-name").value = `mcp_server_${randomSuffix}`;
+      switchLaunchTab("content");
+      openModal("modal-launch");
+    }
+
+    function switchLaunchTab(tab) {
+      activeLaunchTab = tab;
+      document.getElementById("tab-launch-path-btn").classList.toggle("active", tab === "path");
+      document.getElementById("tab-launch-content-btn").classList.toggle("active", tab === "content");
+      document.getElementById("launch-panel-path").style.display = (tab === "path") ? "flex" : "none";
+      document.getElementById("launch-panel-content").style.display = (tab === "content") ? "flex" : "none";
+    }
+
+    function loadSampleScript() {
+      const name = document.getElementById("launch-name").value.trim() || "my_mcp_server";
+      document.getElementById("launch-script-content").value = 
+`#!/bin/bash
+#SBATCH --job-name=${name}
+#SBATCH --partition=24s
+#SBATCH --time=02:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+# Environment setup (e.g. module load or activate venv)
+# source /home/$USER/venv/bin/activate
+
+# Execute MCP server
+echo "Starting Slurm MCP Server on host $(hostname)..."
+python3 /path/to/my_mcp_server.py
+`;
+      showToast("📄 Sample Slurm script template loaded!");
+    }
+
+    function handleLocalFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById("launch-script-content").value = e.target.result;
+        // Suggest mcp_name from filename if not filled or default
+        const nameInput = document.getElementById("launch-name");
+        if (!nameInput.value.trim() || nameInput.value.startsWith("mcp_server_")) {
+          const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_\-]/g, "_");
+          nameInput.value = baseName;
+        }
+        const hintEl = document.getElementById("file-selection-hint");
+        if (hintEl) {
+          hintEl.innerHTML = `✅ Loaded file: <code>${escapeHtml(file.name)}</code> (${file.size} bytes). You can inspect/edit the script directives above before submitting.`;
+        }
+        showToast(`📂 Loaded '${file.name}' (${file.size} bytes)`);
+      };
+      reader.onerror = function() {
+        showToast("❌ Failed to read selected file.");
+      };
+      reader.readAsText(file);
+      event.target.value = "";
+    }
+
+    async function submitLaunchServer() {
+      const name = document.getElementById("launch-name").value.trim();
+      if (!name) {
+        showToast("⚠️ MCP Server Name (mcp_name) is required");
+        return;
+      }
+
+      if (!/^[a-zA-Z0-9_\-]+$/.test(name)) {
+        showToast("⚠️ mcp_name can only contain letters, numbers, underscores, and hyphens (no spaces)");
+        return;
+      }
+
+      let payload = {
+        mcp_name: name
+      };
+
+      if (activeLaunchTab === "path") {
+        const path = document.getElementById("launch-script-path").value.trim();
+        if (!path) {
+          showToast("⚠️ Please enter a local script file path");
+          return;
+        }
+        payload.run_script = path;
+      } else {
+        const content = document.getElementById("launch-script-content").value.trim();
+        if (!content) {
+          showToast("⚠️ Please paste the Slurm script content");
+          return;
+        }
+        payload.custom_script_content = content;
+      }
+
+      const btn = document.getElementById("btn-submit-launch");
+      btn.disabled = true;
+      btn.textContent = "Submitting Job...";
+
+      try {
+        const res = await fetch(`${API_BASE}/servers/launch`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+          const jobId = data.job_id;
+          showToast(`🚀 Server '${name}' submitted (Job #${jobId})`);
+          closeModal("modal-launch");
+          resetActivityTimer();
+
+          // Register in post-submission burst monitor
+          monitoredJobs.set(jobId, {
+            mcp_name: name,
+            attempts: 0,
+            maxAttempts: 15 // Check every 3s for ~45 seconds
+          });
+          showJobMonitorBanner(jobId, name, "PENDING");
+
+          fetchDashboardData();
+          startBurstMonitoring();
+        } else {
+          showToast(`❌ Launch failed: ${data.detail || data.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        showToast(`❌ Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Submit Slurm Job";
+      }
+    }
+
+    async function viewTools(mcpName) {
+      document.getElementById("tools-mcp-name").textContent = mcpName;
+      const body = document.getElementById("tools-modal-body");
+      body.innerHTML = `<p style="color: var(--text-muted);">Connecting to backend MCP server to introspect tools...</p>`;
+      openModal("modal-tools");
+
+      try {
+        const res = await fetch(`${API_BASE}/servers/${encodeURIComponent(mcpName)}/tools`, {
+          headers: getAuthHeaders()
+        });
+        const data = await res.json();
+
+        if (data.status === "success" && data.tools && data.tools.length > 0) {
+          body.innerHTML = `
+            <div style="margin-bottom: 12px; font-size: 0.9rem; color: var(--text-muted);">
+              Exporting <strong>${data.tools.length}</strong> tools from <code>${escapeHtml(mcpName)}</code>. You can run any tool directly in the browser:
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 14px; max-height: 520px; overflow-y: auto; padding-right: 4px;">
+              ${data.tools.map((t, idx) => renderToolCard(t, mcpName, idx)).join("")}
+            </div>
+          `;
+        } else {
+          body.innerHTML = `
+            <div class="empty-state" style="padding: 2rem;">
+              <p>${escapeHtml(data.message || "No tools returned by this server.")}</p>
+            </div>
+          `;
+        }
+      } catch (err) {
+        body.innerHTML = `<p style="color: #f87171;">Failed to inspect tools: ${err.message}</p>`;
+      }
+    }
+
+    function renderToolCard(tool, mcpName, index) {
+      const properties = (tool.parameters && tool.parameters.properties) ? tool.parameters.properties : {};
+      const required = (tool.parameters && tool.parameters.required) ? tool.parameters.required : [];
+      const propKeys = Object.keys(properties);
+
+      let paramsInputs = "";
+      if (propKeys.length > 0) {
+        paramsInputs = `
+          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-dim);">Input Parameters:</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;">
+              ${propKeys.map(k => {
+                const p = properties[k] || {};
+                const pType = p.type || "string";
+                const isReq = required.includes(k);
+                const placeholder = (p.description ? `${p.description}` : k) + (isReq ? " (required)" : " (optional)");
+
+                let inputField = "";
+                if (pType === "boolean") {
+                  inputField = `
+                    <select id="tool-input-${index}-${k}" data-type="${pType}" class="form-control" style="font-size: 0.82rem; padding: 4px 8px;">
+                      <option value="">-- not set --</option>
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  `;
+                } else if (pType === "integer" || pType === "number") {
+                  inputField = `
+                    <input type="number" id="tool-input-${index}-${k}" data-type="${pType}" class="form-control" placeholder="${escapeHtml(placeholder)}" style="font-size: 0.82rem; padding: 4px 8px;" />
+                  `;
+                } else {
+                  inputField = `
+                    <input type="text" id="tool-input-${index}-${k}" data-type="${pType}" class="form-control" placeholder="${escapeHtml(placeholder)}" style="font-size: 0.82rem; padding: 4px 8px;" />
+                  `;
+                }
+
+                return `
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label style="font-size: 0.75rem; display: flex; justify-content: space-between;">
+                      <code>${escapeHtml(k)}</code>
+                      <span style="color: ${isReq ? '#f87171' : 'var(--text-dim)'}; font-size: 0.7rem;">${pType}${isReq ? ' *' : ''}</span>
+                    </label>
+                    ${inputField}
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      } else {
+        paramsInputs = `<div style="font-size: 0.8rem; color: var(--text-dim); font-style: italic;">No arguments required.</div>`;
+      }
+
+      const propKeysJson = escapeHtml(JSON.stringify(propKeys));
+
+      return `
+        <div class="tool-card">
+          <div class="tool-header">
+            <span class="tool-name">⚡ ${escapeHtml(tool.name)}</span>
+            <button class="btn btn-primary btn-sm" id="btn-run-tool-${index}" onclick="runToolInBrowser('${escapeHtml(mcpName)}', '${escapeHtml(tool.name)}', ${index}, ${propKeysJson})">
+              ▶ Execute Tool
+            </button>
+          </div>
+          <div class="tool-desc">${escapeHtml(tool.description || "No description provided.")}</div>
+          ${paramsInputs}
+          <div id="tool-output-container-${index}" style="display: none; margin-top: 10px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span id="tool-status-badge-${index}" class="badge badge-running" style="font-size: 0.72rem;">Result</span>
+              <button class="btn btn-sm btn-secondary" onclick="copyCode('tool-output-pre-${index}')" style="font-size: 0.72rem; padding: 2px 6px;">Copy Result</button>
+            </div>
+            <pre id="tool-output-pre-${index}" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all; max-height: 250px; overflow-y: auto; margin: 0;"></pre>
+          </div>
+        </div>
+      `;
+    }
+
+    async function runToolInBrowser(mcpName, toolName, index, propKeys) {
+      const btn = document.getElementById(`btn-run-tool-${index}`);
+      const outContainer = document.getElementById(`tool-output-container-${index}`);
+      const statusBadge = document.getElementById(`tool-status-badge-${index}`);
+      const outPre = document.getElementById(`tool-output-pre-${index}`);
+
+      const args = {};
+      if (Array.isArray(propKeys)) {
+        for (const key of propKeys) {
+          const el = document.getElementById(`tool-input-${index}-${key}`);
+          if (!el) continue;
+          const val = el.value.trim();
+          const valType = el.getAttribute("data-type") || "string";
+          if (val === "") continue;
+
+          if (valType === "integer" || valType === "int") {
+            args[key] = parseInt(val, 10);
+          } else if (valType === "number" || valType === "float") {
+            args[key] = parseFloat(val);
+          } else if (valType === "boolean") {
+            args[key] = (val === "true");
+          } else if (valType === "object" || valType === "array") {
+            try {
+              args[key] = JSON.parse(val);
+            } catch (e) {
+              args[key] = val;
+            }
+          } else {
+            args[key] = val;
+          }
+        }
+      }
+
+      btn.disabled = true;
+      btn.textContent = "⏳ Running...";
+      outContainer.style.display = "block";
+      statusBadge.className = "badge badge-pending";
+      statusBadge.textContent = "Executing...";
+      outPre.textContent = "Sending execution request to Slurm backend server...";
+
+      try {
+        const res = await fetch(`${API_BASE}/servers/${encodeURIComponent(mcpName)}/tools/${encodeURIComponent(toolName)}/execute`, {
+          method: "POST",
+          headers: {
+            ...getAuthHeaders(),
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ arguments: args })
+        });
+        const data = await res.json();
+        if (data.status === "success" && !data.is_error) {
+          statusBadge.className = "badge badge-running";
+          statusBadge.textContent = "Success";
+          outPre.textContent = typeof data.output === "object" ? JSON.stringify(data.output, null, 2) : (data.output || "Completed (empty response)");
+        } else {
+          statusBadge.className = "badge badge-failed";
+          statusBadge.textContent = "Error";
+          outPre.textContent = data.output || data.detail || "Execution failed.";
+        }
+      } catch (err) {
+        statusBadge.className = "badge badge-failed";
+        statusBadge.textContent = "Network Error";
+        outPre.textContent = `Failed to execute tool: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "▶ Execute Tool";
+      }
+    }
+
+    let currentConfigData = null;
+    let currentConfigMcpName = "";
+
+    async function showMcpConfig(mcpName) {
+      currentConfigMcpName = mcpName;
+      document.getElementById("config-mcp-name").textContent = mcpName;
+      document.getElementById("chat-agent-config-snippet").textContent = "// Loading prompt...";
+      document.getElementById("chat-agent-remove-snippet").textContent = "// Loading prompt...";
+      document.getElementById("vscode-config-snippet").textContent = "// Loading configuration...";
+      document.getElementById("claude-config-snippet").textContent = "// Loading configuration...";
+      openModal("modal-config");
+
+      try {
+        const res = await fetch(`${API_BASE}/mcp-config/${encodeURIComponent(mcpName)}`, {
+          headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          currentConfigData = data;
+          renderMcpConfigSnippets();
+        }
+      } catch (err) {
+        console.error("Config fetch error:", err);
+      }
+    }
+
+    function toggleConfigTokenSnippet() {
+      renderMcpConfigSnippets();
+    }
+
+    function renderMcpConfigSnippets() {
+      if (!currentConfigData) return;
+      const includeToken = document.getElementById("config-include-token-chk").checked;
+      const mcpName = currentConfigMcpName;
+      const proxiedUrl = currentConfigData.proxied_url || `${window.location.origin}/cloud/${mcpName}/mcp`;
+
+      let authClause = (includeToken && authToken)
+        ? ` and Authorization header Bearer "${authToken}"`
+        : "";
+      document.getElementById("chat-agent-config-snippet").textContent =
+        `Please add the Slurm MCP server "${mcpName}" to our workspace .vscode/mcp.json (or MCP client settings) with URL "${proxiedUrl}"${authClause}, then refresh your MCP tools.`;
+
+      document.getElementById("chat-agent-remove-snippet").textContent =
+        `Please remove the Slurm MCP server "${mcpName}" from our workspace .vscode/mcp.json (or MCP client settings), disconnect it, then refresh your MCP tools.`;
+
+      let vscodeObj = {
+        mcpServers: {
+          [mcpName]: {
+            url: proxiedUrl,
+            type: "http"
+          }
+        }
+      };
+
+      let claudeObj = {
+        mcpServers: {
+          [mcpName]: {
+            url: proxiedUrl
+          }
+        }
+      };
+
+      if (includeToken && authToken) {
+        vscodeObj.mcpServers[mcpName].headers = {
+          Authorization: `Bearer ${authToken}`
+        };
+        claudeObj.mcpServers[mcpName].headers = {
+          Authorization: `Bearer ${authToken}`
+        };
+      }
+
+      document.getElementById("vscode-config-snippet").textContent = JSON.stringify(vscodeObj, null, 2);
+      document.getElementById("claude-config-snippet").textContent = JSON.stringify(claudeObj, null, 2);
+    }
+
+    async function viewLogs(jobId) {
+      document.getElementById("logs-job-id").textContent = jobId || "N/A";
+      document.getElementById("terminal-logs").textContent = "Fetching Slurm output logs...";
+      openModal("modal-logs");
+
+      try {
+        const res = await fetch(`${API_BASE}/servers/${jobId}/logs`, {
+          headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        document.getElementById("terminal-logs").textContent = data.logs || "No log content available.";
+      } catch (err) {
+        document.getElementById("terminal-logs").textContent = "Failed to load logs: " + err.message;
+      }
+    }
+
+    async function cancelServer(mcpName, jobId) {
+      if (!confirm(`Are you sure you want to stop/terminate Slurm MCP server '${mcpName}' (Job #${jobId})?`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/servers/cancel`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ mcp_name: mcpName, job_id: jobId })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+          showToast(`⏹️ Server ${mcpName} stopped`);
+          fetchDashboardData();
+        } else {
+          showToast(`❌ Stop failed: ${data.detail || data.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        showToast(`❌ Error: ${err.message}`);
+      }
+    }
+
+    // Modal Utils
+    function openModal(id) {
+      document.getElementById(id).classList.add("active");
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove("active");
+    }
+
+    function copyCode(elementId) {
+      const text = document.getElementById(elementId).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("📋 Copied to clipboard!");
+      });
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      document.getElementById("toast-msg").textContent = msg;
+      t.style.display = "flex";
+      setTimeout(() => { t.style.display = "none"; }, 3000);
+    }
+
+    // Auth Handlers & Modal
+    let authInfoCache = null;
+    let devicePollInterval = null;
+
+    function openAuthModal() {
+      const userStatusEl = document.getElementById("auth-current-status");
+      const modalUserEl = document.getElementById("auth-modal-user");
+      if (currentUser && currentUser !== "unknown") {
+        modalUserEl.textContent = currentUser;
+        userStatusEl.style.display = "flex";
+      } else {
+        userStatusEl.style.display = "none";
+      }
+      openModal("modal-auth");
+    }
+
+    function switchAuthTab(tab) {
+      document.getElementById("tab-auth-globus-btn").classList.toggle("active", tab === "globus");
+      document.getElementById("tab-auth-manual-btn").classList.toggle("active", tab === "manual");
+      document.getElementById("auth-panel-globus").style.display = (tab === "globus") ? "flex" : "none";
+      document.getElementById("auth-panel-manual").style.display = (tab === "manual") ? "flex" : "none";
+    }
+
+    function generateCodeVerifier() {
+      const array = new Uint8Array(32);
+      window.crypto.getRandomValues(array);
+      return Array.from(array, byte => ('0' + byte.toString(16)).slice(-2)).join('');
+    }
+
+    async function generateCodeChallenge(verifier) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(verifier);
+      const digest = await window.crypto.subtle.digest('SHA-256', data);
+      return btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+
+    function extractTargetToken(pollData, globusRsId, globusRsScopeSuffix) {
+      if (!pollData || typeof pollData !== 'object') return pollData;
+      if (!globusRsId && !globusRsScopeSuffix) return pollData;
+      const otherTokens = pollData.other_tokens || [];
+      const topRs = pollData.resource_server || '';
+      const topScope = pollData.scope || '';
+
+      if ((globusRsId && (topRs === globusRsId || topScope.includes(globusRsId))) ||
+          (globusRsScopeSuffix && topScope.includes(globusRsScopeSuffix))) {
+        return pollData;
+      }
+
+      for (const t of otherTokens) {
+        const tRs = t.resource_server || '';
+        const tScope = t.scope || '';
+        if ((globusRsId && (tRs === globusRsId || tScope.includes(globusRsId))) ||
+            (globusRsScopeSuffix && tScope.includes(globusRsScopeSuffix))) {
+          const res = Object.assign({}, t);
+          if (!res.id_token && pollData.id_token) res.id_token = pollData.id_token;
+          return res;
+        }
+      }
+      return pollData;
+    }
+
+    async function startGlobusAuthFlow() {
+      const btn = document.getElementById("btn-start-globus");
+      btn.disabled = true;
+      btn.textContent = "Loading Auth Settings...";
+
+      try {
+        const infoRes = await fetch(`${window.location.origin}/auth/info`);
+        if (!infoRes.ok) throw new Error("Failed to load OIDC authentication info.");
+        authInfoCache = await infoRes.json();
+
+        if (authInfoCache.flow_type === "auth_code") {
+          const codeVerifier = generateCodeVerifier();
+          const codeChallenge = await generateCodeChallenge(codeVerifier);
+          sessionStorage.setItem("pkce_code_verifier", codeVerifier);
+
+          const authUrl = `${authInfoCache.authorization_url}?client_id=${encodeURIComponent(authInfoCache.client_id)}&redirect_uri=${encodeURIComponent(authInfoCache.redirect_uri)}&scope=${encodeURIComponent(authInfoCache.scope)}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+
+          window.open(authUrl, "_blank");
+          document.getElementById("globus-code-exchange-panel").style.display = "flex";
+          showToast("🌐 Globus login opened in a new tab. Copy the authorization code and paste below.");
+        } else {
+          // Device Code flow
+          const devRes = await fetch(`${window.location.origin}/auth/device-code`, { method: "POST" });
+          const devData = await devRes.json();
+
+          document.getElementById("globus-device-code-display").textContent = devData.user_code;
+          document.getElementById("globus-device-polling-panel").style.display = "flex";
+
+          window.open(devData.verification_uri, "_blank");
+          showToast(`🌐 Enter code ${devData.user_code} on the verification page`);
+
+          // Poll
+          if (devicePollInterval) clearInterval(devicePollInterval);
+          devicePollInterval = setInterval(async () => {
+            try {
+              const pRes = await fetch(`${window.location.origin}/auth/poll?device_code=${encodeURIComponent(devData.device_code)}`, { method: "POST" });
+              const pData = await pRes.json();
+              const target = extractTargetToken(pData, authInfoCache.globus_rs_id, authInfoCache.globus_rs_scope_suffix);
+              if (target && target.access_token) {
+                clearInterval(devicePollInterval);
+                setAuthenticatedToken(target.access_token);
+              }
+            } catch (e) {
+              console.error("Polling error:", e);
+            }
+          }, (devData.interval || 5) * 1000);
+        }
+      } catch (err) {
+        showToast("❌ Auth error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🚀 Open Globus Login Window";
+      }
+    }
+
+    async function completeGlobusCodeExchange() {
+      const codeInput = document.getElementById("globus-auth-code-input");
+      const code = codeInput.value.trim();
+      const verifier = sessionStorage.getItem("pkce_code_verifier") || "";
+      if (!code) {
+        showToast("⚠️ Please paste the authorization code");
+        return;
+      }
+
+      const btn = document.getElementById("btn-exchange-code");
+      btn.disabled = true;
+      btn.textContent = "Verifying...";
+
+      try {
+        const res = await fetch(`${window.location.origin}/auth/code-exchange?code=${encodeURIComponent(code)}&code_verifier=${encodeURIComponent(verifier)}`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        const target = extractTargetToken(data, authInfoCache?.globus_rs_id, authInfoCache?.globus_rs_scope_suffix);
+
+        if (target && target.access_token) {
+          setAuthenticatedToken(target.access_token);
+        } else {
+          showToast(`❌ Verification failed: ${JSON.stringify(data)}`);
+        }
+      } catch (err) {
+        showToast("❌ Code exchange failed: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Verify & Sign In";
+      }
+    }
+
+    function applyModalManualToken() {
+      const input = document.getElementById("manual-modal-token-input");
+      const val = input.value.trim();
+      if (!val) {
+        showToast("⚠️ Please enter a token");
+        return;
+      }
+      setAuthenticatedToken(val);
+    }
+
+    function setAuthenticatedToken(token) {
+      authToken = token;
+      sessionStorage.setItem("mcp_dashboard_token", token);
+      closeModal("modal-auth");
+      showToast("✅ Successfully Authenticated!");
+      startAutoRefresh();
+      fetchDashboardData();
+    }
+
+    function signOut() {
+      authToken = "";
+      currentUser = "";
+      sessionStorage.removeItem("mcp_dashboard_token");
+      closeModal("modal-auth");
+      document.getElementById("user-name").textContent = "Not Authenticated";
+      document.getElementById("user-avatar").textContent = "?";
+      document.getElementById("btn-signin").style.display = "inline-flex";
+      document.getElementById("user-badge").style.display = "none";
+      showToast("Signed out.");
+      fetchDashboardData();
+    }
+
+    function showAlert(htmlContent, isHtml = false) {
+      const banner = document.getElementById("alert-banner");
+      const msgEl = document.getElementById("alert-msg");
+      if (isHtml) {
+        msgEl.innerHTML = htmlContent;
+      } else {
+        msgEl.textContent = htmlContent;
+      }
+      banner.style.display = "flex";
+    }
+
+    function hideAlert() {
+      const banner = document.getElementById("alert-banner");
+      banner.style.display = "none";
+    }
+
+    function applyManualToken() {
+      const input = document.getElementById("manual-token-input");
+      if (!input || !input.value.trim()) {
+        showToast("⚠️ Please enter a valid token");
+        return;
+      }
+      setAuthenticatedToken(input.value.trim());
+    }
+
+    function startAutoRefresh() {
+      if (refreshInterval) clearInterval(refreshInterval);
+      refreshInterval = setInterval(() => {
+        if (isAutoRefreshPaused) return;
+
+        refreshCountdown--;
+        const timerEl = document.getElementById("refresh-timer");
+        if (timerEl) {
+          timerEl.textContent = `${refreshCountdown}s`;
+        }
+
+        if (refreshCountdown <= 0) {
+          autoRefreshCyclesRemaining--;
+          if (autoRefreshCyclesRemaining <= 0) {
+            pauseAutoRefresh();
+          } else {
+            fetchDashboardData();
+            refreshCountdown = POLL_INTERVAL_SECONDS;
+          }
+        }
+      }, 1000);
+    }
+
+    function pauseAutoRefresh() {
+      isAutoRefreshPaused = true;
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+      const refreshBtn = document.getElementById("btn-refresh");
+      if (refreshBtn) {
+        refreshBtn.innerHTML = `🔄 Refresh (Paused - Click to Update)`;
+      }
+    }
+
+    function manualRefresh() {
+      autoRefreshCyclesRemaining = MAX_AUTO_REFRESH_CYCLES;
+      isAutoRefreshPaused = false;
+      refreshCountdown = POLL_INTERVAL_SECONDS;
+      const refreshBtn = document.getElementById("btn-refresh");
+      if (refreshBtn) {
+        refreshBtn.innerHTML = `🔄 Refresh (<span id="refresh-timer">${refreshCountdown}s</span>)`;
+      }
+      fetchDashboardData();
+      startAutoRefresh();
+    }
+
+    function resetActivityTimer() {
+      autoRefreshCyclesRemaining = MAX_AUTO_REFRESH_CYCLES;
+      if (isAutoRefreshPaused) {
+        manualRefresh();
+      }
+    }
+
+    // Post-Submission Burst Monitoring Functions
+    function startBurstMonitoring() {
+      if (burstMonitorInterval) return;
+      burstMonitorInterval = setInterval(async () => {
+        if (monitoredJobs.size === 0) {
+          clearInterval(burstMonitorInterval);
+          burstMonitorInterval = null;
+          return;
+        }
+
+        await fetchDashboardData();
+
+        for (const [jobId, jobInfo] of Array.from(monitoredJobs.entries())) {
+          jobInfo.attempts++;
+          const server = allServers.find(s => String(s.job_id) === String(jobId) || s.mcp_name === jobInfo.mcp_name);
+
+          if (server) {
+            if (server.state === "RUNNING") {
+              monitoredJobs.delete(jobId);
+              removeJobMonitorBanner(jobId);
+              showToast(`✅ Server '${jobInfo.mcp_name}' is now RUNNING!`);
+            } else if (server.state === "FAILED" || server.state === "CANCELLED" || server.state === "TIMEOUT" || server.state === "NODE_FAIL") {
+              monitoredJobs.delete(jobId);
+              showJobFailureAlert(jobId, jobInfo.mcp_name, server.state);
+            } else {
+              updateJobMonitorBanner(jobId, jobInfo.mcp_name, server.state);
+            }
+          }
+
+          if (jobInfo.attempts >= jobInfo.maxAttempts) {
+            monitoredJobs.delete(jobId);
+            removeJobMonitorBanner(jobId);
+            showToast(`⏳ Job #${jobId} ('${jobInfo.mcp_name}') is queued in Slurm.`);
+          }
+        }
+
+        if (monitoredJobs.size === 0) {
+          clearInterval(burstMonitorInterval);
+          burstMonitorInterval = null;
+        }
+      }, 3000);
+    }
+
+    function showJobMonitorBanner(jobId, mcpName, state) {
+      let container = document.getElementById("job-monitor-container");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "job-monitor-container";
+        container.style = "display: flex; flex-direction: column; gap: 10px; margin-bottom: 1rem;";
+        const mainEl = document.querySelector("main");
+        mainEl.insertBefore(container, mainEl.firstChild);
+      }
+      let banner = document.getElementById(`job-monitor-${jobId}`);
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = `job-monitor-${jobId}`;
+        banner.className = "alert-banner";
+        banner.style.display = "flex";
+        banner.style.borderColor = "rgba(59, 130, 246, 0.4)";
+        banner.style.background = "rgba(59, 130, 246, 0.12)";
+        banner.style.color = "#93c5fd";
+        container.appendChild(banner);
+      }
+      banner.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="pulse-dot" style="background: #60a5fa;"></span>
+          <span><strong>Slurm Job #${jobId}</strong> (<code>${escapeHtml(mcpName)}</code>): Status is <strong>${state}</strong>...</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-sm btn-secondary" onclick="viewLogs(${jobId})">📜 Logs</button>
+        </div>
+      `;
+    }
+
+    function updateJobMonitorBanner(jobId, mcpName, state) {
+      showJobMonitorBanner(jobId, mcpName, state);
+    }
+
+    function removeJobMonitorBanner(jobId) {
+      const banner = document.getElementById(`job-monitor-${jobId}`);
+      if (banner) banner.remove();
+    }
+
+    function showJobFailureAlert(jobId, mcpName, state) {
+      removeJobMonitorBanner(jobId);
+      let container = document.getElementById("job-monitor-container");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "job-monitor-container";
+        container.style = "display: flex; flex-direction: column; gap: 10px; margin-bottom: 1rem;";
+        const mainEl = document.querySelector("main");
+        mainEl.insertBefore(container, mainEl.firstChild);
+      }
+      const banner = document.createElement("div");
+      banner.className = "alert-banner";
+      banner.style.display = "flex";
+      banner.style.borderColor = "rgba(239, 68, 68, 0.5)";
+      banner.style.background = "rgba(239, 68, 68, 0.15)";
+      banner.style.color = "#fca5a5";
+      banner.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.2rem;">❌</span>
+          <span><strong>Job Launch Failed:</strong> Slurm Job #${jobId} (<code>${escapeHtml(mcpName)}</code>) ended with state <strong>${state}</strong>.</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-sm btn-danger" onclick="viewLogs(${jobId})">📜 View Error Logs</button>
+          <button class="btn btn-sm btn-secondary" onclick="this.parentElement.parentElement.remove()">Dismiss</button>
+        </div>
+      `;
+      container.appendChild(banner);
+      showToast(`❌ Job #${jobId} failed (${state})! Check error logs.`);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    // =========================================================================
+    // Regular Slurm Jobs Logic
+    // =========================================================================
+    let currentMainTab = "mcp";
+    let allRegularJobs = [];
+    let currentLogJobId = null;
+
+    function switchMainTab(tab) {
+      currentMainTab = tab;
+      document.getElementById("main-tab-mcp").classList.toggle("active", tab === "mcp");
+      document.getElementById("main-tab-regular").classList.toggle("active", tab === "regular");
+      document.getElementById("section-mcp-servers").style.display = (tab === "mcp") ? "block" : "none";
+      document.getElementById("section-regular-jobs").style.display = (tab === "regular") ? "block" : "none";
+      document.getElementById("mcp-actions-bar").style.display = (tab === "mcp") ? "block" : "none";
+      document.getElementById("regular-actions-bar").style.display = (tab === "regular") ? "block" : "none";
+
+      if (tab === "regular") {
+        loadRegularJobs();
+      }
+      resetActivityTimer();
+    }
+
+    async function loadRegularJobs() {
+      try {
+        const querySuffix = authToken ? `?token=${encodeURIComponent(authToken)}` : "";
+        const res = await fetch(`${API_BASE}/regular-jobs${querySuffix}`, {
+          headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          allRegularJobs = data.jobs || [];
+          renderRegularJobs(allRegularJobs);
+          updateServerStats();
+        } else {
+          document.getElementById("regular-jobs-tbody").innerHTML = `
+            <tr>
+              <td colspan="7" style="padding: 24px; text-align: center; color: #f87171;">
+                ⚠️ Failed to load regular Slurm jobs: ${escapeHtml(data.error || "Unknown error")}
+              </td>
+            </tr>
+          `;
+        }
+      } catch (err) {
+        console.error("Error fetching regular jobs:", err);
+      }
+    }
+
+    function getSlurmStateBadge(state) {
+      const st = (state || "UNKNOWN").toUpperCase();
+      let badgeClass = "badge-stopped";
+      let icon = "⚪";
+      let hasPulse = false;
+
+      if (st === "RUNNING") {
+        badgeClass = "badge-running";
+        icon = "▶️";
+        hasPulse = true;
+      } else if (st === "COMPLETING") {
+        badgeClass = "badge-completing";
+        icon = "⏳";
+        hasPulse = true;
+      } else if (["PENDING", "CONFIGURING"].includes(st)) {
+        badgeClass = "badge-pending";
+        icon = "⏱️";
+        hasPulse = true;
+      } else if (["REQUEUED", "RESIZING"].includes(st)) {
+        badgeClass = "badge-pending";
+        icon = "🔄";
+      } else if (st === "COMPLETED") {
+        badgeClass = "badge-completed";
+        icon = "✅";
+      } else if (["FAILED", "BOOT_FAIL", "NODE_FAIL", "OUT_OF_MEMORY"].includes(st)) {
+        badgeClass = "badge-failed";
+        icon = "❌";
+      } else if (st === "CANCELLED") {
+        badgeClass = "badge-cancelled";
+        icon = "⏹️";
+      } else if (st === "TIMEOUT") {
+        badgeClass = "badge-timeout";
+        icon = "⏰";
+      } else if (["SUSPENDED", "STOPPED", "PREEMPTED"].includes(st)) {
+        badgeClass = "badge-suspended";
+        icon = "⏸️";
+      }
+
+      return `<span class="badge ${badgeClass}">${hasPulse ? '<span class="pulse-dot"></span>' : ''} ${icon} ${escapeHtml(st)}</span>`;
+    }
+
+    function renderRegularJobs(jobs) {
+      const tbody = document.getElementById("regular-jobs-tbody");
+      document.getElementById("regular-job-count-label").textContent = `${jobs.length} jobs found`;
+
+      if (!jobs || jobs.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" style="padding: 32px; text-align: center; color: var(--text-muted);">
+              <div style="font-size: 1.5rem; margin-bottom: 8px;">📋</div>
+              <strong>No regular Slurm jobs found for ${escapeHtml(currentUser || "current user")}.</strong>
+              <p style="margin-top: 4px; font-size: 0.85rem;">Click "Submit Regular Slurm Job" above to launch a batch script.</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = jobs.map(j => {
+        const state = (j.state || "UNKNOWN").toUpperCase();
+        const isCancellable = ["PENDING", "RUNNING", "SUSPENDED", "CONFIGURING"].includes(state);
+
+        return `
+          <tr>
+            <td style="font-weight: 600; color: #60a5fa; font-family: 'JetBrains Mono', monospace;">#${j.job_id}</td>
+            <td style="font-weight: 500; color: var(--text-main);">${escapeHtml(j.job_name || "N/A")}</td>
+            <td><span style="color: var(--text-dim); font-size: 0.85rem;">${escapeHtml(j.partition || "N/A")}</span></td>
+            <td>${getSlurmStateBadge(j.state)}</td>
+            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--text-muted);">${escapeHtml(j.time_used || "--")} / ${escapeHtml(j.time_limit || "N/A")}</td>
+            <td style="font-size: 0.82rem; color: var(--text-dim);">${escapeHtml(j.nodelist_or_reason || (j.nodes ? `${j.nodes} node(s)` : ""))}</td>
+            <td style="text-align: right;">
+              <div style="display: inline-flex; gap: 6px; justify-content: flex-end;">
+                <button class="btn btn-sm btn-secondary" onclick="viewRegularJobLogs(${j.job_id}, '${escapeHtml(j.job_name)}')">📜 Logs</button>
+                ${isCancellable ? `
+                  <button class="btn btn-sm btn-danger" onclick="cancelRegularJob(${j.job_id}, '${escapeHtml(j.job_name)}')">⏹ Cancel</button>
+                ` : ""}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function openSubmitRegularModal() {
+      document.getElementById("regular-job-name").value = "";
+      document.getElementById("regular-script-content").value = "";
+      loadRegularSampleScript("cpu");
+      openModal("modal-submit-regular");
+    }
+
+    function handleRegularFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById("regular-script-content").value = e.target.result;
+        if (!document.getElementById("regular-job-name").value) {
+          const defaultName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+          document.getElementById("regular-job-name").value = defaultName;
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function loadRegularSampleScript(type) {
+      if (type === "gpu") {
+        document.getElementById("regular-script-content").value = `#!/bin/bash
+#SBATCH --job-name=lqcd_gpu_job
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --time=02:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+
+echo "=== Regular Slurm GPU Job ==="
+echo "Node: $(hostname)"
+echo "Date: $(date)"
+echo "Assigned GPU devices:"
+nvidia-smi
+
+# Execute workload
+# python3 -m lqcd_analysis --config config.yaml
+
+echo "Finished at $(date)"
+`;
+      } else {
+        document.getElementById("regular-script-content").value = `#!/bin/bash
+#SBATCH --job-name=lqcd_cpu_batch
+#SBATCH --partition=24s
+#SBATCH --time=01:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+
+echo "=== Regular Slurm Batch Job ==="
+echo "Node: $(hostname)"
+echo "Date: $(date)"
+echo "Current directory: $(pwd)"
+
+# Execute commands
+srun hostname
+sleep 5
+
+echo "Completed at $(date)"
+`;
+      }
+    }
+
+    async function submitRegularJob() {
+      const jobName = document.getElementById("regular-job-name").value.trim();
+      const scriptContent = document.getElementById("regular-script-content").value.trim();
+
+      if (!jobName) {
+        showToast("⚠️ Please specify a Slurm Job Name.");
+        return;
+      }
+      if (!scriptContent) {
+        showToast("⚠️ Please enter or upload a batch script.");
+        return;
+      }
+
+      const btn = document.getElementById("btn-submit-regular");
+      btn.disabled = true;
+      btn.textContent = "⏳ Submitting...";
+
+      try {
+        const res = await fetch(`${API_BASE}/regular-jobs/submit`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            job_name: jobName,
+            submission_script: scriptContent
+          })
+        });
+
+        const data = await res.json();
+        if (data.status === "success") {
+          closeModal("modal-submit-regular");
+          showToast(`🚀 Job #${data.job_id} submitted successfully!`);
+          switchMainTab("regular");
+          loadRegularJobs();
+        } else {
+          showToast(`❌ Error: ${data.detail || data.message || "Failed to submit job"}`);
+        }
+      } catch (err) {
+        showToast(`❌ Network error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🚀 Submit Slurm Job";
+      }
+    }
+
+    async function cancelRegularJob(jobId, jobName) {
+      if (!confirm(`Are you sure you want to cancel Slurm Job #${jobId} ('${jobName}')?`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/regular-jobs/cancel`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ job_id: jobId })
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          showToast(`⏹ Job #${jobId} cancelled.`);
+          loadRegularJobs();
+        } else {
+          showToast(`❌ Cancel failed: ${data.detail || data.message || "Error"}`);
+        }
+      } catch (err) {
+        showToast(`❌ Network error: ${err.message}`);
+      }
+    }
+
+    async function viewRegularJobLogs(jobId, jobName) {
+      currentLogJobId = jobId;
+      document.getElementById("regular-log-title").textContent = `#${jobId} (${jobName || ""})`;
+      document.getElementById("regular-log-path").textContent = "Log file path: Inspecting cluster filesystem...";
+      document.getElementById("regular-log-content").textContent = "// Fetching logs from Slurm...";
+      openModal("modal-regular-logs");
+
+      await refreshRegularLogs();
+    }
+
+    async function refreshRegularLogs() {
+      if (!currentLogJobId) return;
+      try {
+        const res = await fetch(`${API_BASE}/regular-jobs/${currentLogJobId}/logs`, {
+          headers: getAuthHeaders()
+        });
+        const data = await res.json();
+        document.getElementById("regular-log-path").textContent = `Log file path: ${data.path || "Not found"}`;
+        document.getElementById("regular-log-content").textContent = data.logs || "// No log content available.";
+      } catch (err) {
+        document.getElementById("regular-log-content").textContent = `// Error fetching logs: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

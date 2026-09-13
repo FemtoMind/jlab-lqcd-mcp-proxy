@@ -251,6 +251,10 @@ async def filtered_list_tools():
 if lqcd_mcp_settings.is_fastmcp_version_3 == False:
     lqcd_mcp_main._list_tools = filtered_list_tools
 
+# Include the Slurm MCP Web Dashboard router before mounting /jlab
+from dashboard_router import dashboard_router
+proxy_app.include_router(dashboard_router)
+
 # Mount the main mcp server
 # Something needs to be decided on the path
 proxy_app.mount("/jlab", lqcd_mcp_main_app)
@@ -451,9 +455,14 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
         )
 
     # The full URL for the backend
-    backend_url = backend_server.url
-    # target_url = f"{backend_url}/{path}" if path else backend_url
-    target_url = f"{backend_url}"
+    backend_url = backend_server.url.rstrip("/") if backend_server.url else ""
+    if path:
+        if backend_url.endswith(f"/{path}"):
+            target_url = backend_url
+        else:
+            target_url = f"{backend_url}/{path}" if backend_url else ""
+    else:
+        target_url = backend_url
 
     lqcd_logger.debug(f"Forwarding {request.method} request to {mcp_name} {target_url}")
 
@@ -553,6 +562,7 @@ async def mcp_proxy_route(mcp_name: str, path: str, request: Request):
         headers=dict(rp_resp.headers),
         background=BackgroundTask(client.aclose),
     )
+
 
 
 # Mount the IRI FastAPI app at /

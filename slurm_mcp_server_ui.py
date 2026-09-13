@@ -1,24 +1,12 @@
-# This file contains UI for slurm mcp server.
-# We are using FastMCP/prefab ui to build this slurm dashboard
-# which allows users to launch slurm mcp servers without calling
-# directly to client_ui code. Instead, we ask AI agents to edit
-# mcp configuration files inside the ides.
+# This file contains UI helpers and the browser-based dashboard tool for slurm mcp server.
 import asyncio
+import json
+import os
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.server.context import Context as ServerContext
 from fastmcp.apps import AppConfig
-from prefab_ui import PrefabApp
-from prefab_ui.themes import Presentation
-import prefab_ui.components as pc
-from prefab_ui.actions.mcp import CallTool, SendMessage
-from prefab_ui.actions import OpenFilePicker, SetState, AppendState, ShowToast
-from prefab_ui.actions import FileUpload, SetInterval
-from prefab_ui.rx import EVENT, RESULT, Rx
-from pydantic import BaseModel, Field
-import json
-
-from requests import session
 
 from slurm_mcp_server import (
     lqcd_slurm_manager,
@@ -207,353 +195,106 @@ async def get_all_mcp_server_info(ctx: ServerContext) -> list[MCPServerInfo]:
 
         server_info = MCPServerInfo.from_slurm_mcp_server(s, connected=is_connected)
         server_info_list.append(server_info)
+
     return server_info_list
+
+
+# Helper to silently launch browser locally if available
+def _open_browser_silently(url: str) -> bool:
+    import webbrowser
+    devnull_fd = None
+    saved_stdout_fd = None
+    saved_stderr_fd = None
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        saved_stdout_fd = os.dup(1)
+        saved_stderr_fd = os.dup(2)
+        os.dup2(devnull_fd, 1)
+        os.dup2(devnull_fd, 2)
+    except Exception:
+        pass
+
+    try:
+        res = webbrowser.open(url)
+    except Exception:
+        res = False
+    finally:
+        if saved_stdout_fd is not None:
+            try:
+                os.dup2(saved_stdout_fd, 1)
+                os.close(saved_stdout_fd)
+            except Exception:
+                pass
+        if saved_stderr_fd is not None:
+            try:
+                os.dup2(saved_stderr_fd, 2)
+                os.close(saved_stderr_fd)
+            except Exception:
+                pass
+        if devnull_fd is not None:
+            try:
+                os.close(devnull_fd)
+            except Exception:
+                pass
+    return res
+
 
 @slurm_mcp.tool(
     name="slurm_dashboard",
-    description="Interactive UI to view and manage Slurm backend servers.",
+    description="Launch the interactive web-based Slurm MCP Server Dashboard in your browser.",
     tags={"slurm", "ui"},
-    app=True,
 )
-async def slurm_dashboard(ctx: ServerContext) -> PrefabApp:
-    """Return a PrefabApp containing the Slurm Servers Dashboard."""
-    sid = ctx.session_id
+async def slurm_dashboard(ctx: ServerContext) -> str:
+    """Launch the Slurm MCP Server Web Dashboard with pre-authenticated ticket."""
+    sid = ctx.session_id or ""
 
     user = await lqcd_session_manager().get_resource(sid, "username")
     if user is None:
         # Call validate_user tool
         from slurm_mcp_server import validate_user
-
         await validate_user(username="", ctx=ctx)
-        # check user again
         user = await lqcd_session_manager().get_resource(sid, "username")
-        if user is None:
-            await ctx.error("Cannot find username associated with this session.")
-            lqcd_logger.error("Cannot find username associated with this session.")
-            return PrefabApp(
-                title="LQCD Slurm Dashboard",
-                view=pc.Column(
-                    children=[
-                        pc.Text(
-                            content="Error: Cannot find username associated with this session."
-                        ),
-                    ],
-                ),
-            )
 
-    # Get number of idle nodes in the cluster
-    num_idle_nodes = await number_of_idle_nodes()
-    # Get all mcp servers at this moment
-    all_mcp_servers:list[MCPServerInfo] = await get_all_mcp_server_info(ctx)
+    if user is None:
+        user = "unknown"
 
-    with pc.Column(gap=4) as view:
-        # --- Blocking Modal Overlay ---
-        with pc.If(Rx("is_launching")):
-            with pc.Column(
-                cssClass="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-            ):
-                with pc.Card(cssClass="w-96 shadow-xl"):
-                    with pc.CardHeader():
-                        pc.CardTitle(content="Launching Server...")
-                    with pc.CardContent():
-                        pc.Text(
-                            content="Please wait while the server is being provisioned. This may take a few moments."
-                        )
-        # ------------------------------
+    from dashboard_auth import get_dashboard_auth_manager
+    ticket = await get_dashboard_auth_manager().create_ticket(user, sid)
 
-        with pc.Column(gap=2) as header_row:
-            pc.H3(content="LQCD Slurm Proxy Dashboard", cssClass="font-serif")
-            pc.Lead(content="AmSC FemtoMind Team @ Jlab",align="right", 
-                    cssClass="font-serif text-sm text-blue-600 italic")
-            
-        pc.Separator()
-        
-        # Display of idle nodes and launch button to launch a server
-        num = Rx("idle_nodes")
-        # Waiting counter to show the launcned job state changing from PENDING to RUNNING
-        waiting_counter = Rx("launch_waiting_counter")
+    # Derive base URL directly from the MCP proxy server request context
+    base_url = ""
+    if hasattr(ctx, "request_context") and ctx.request_context is not None:
+        req = getattr(ctx.request_context, "request", None)
+        if req is not None:
+            scheme = req.headers.get("x-forwarded-proto", req.url.scheme if hasattr(req, "url") and hasattr(req.url, "scheme") else "http")
+            host = req.headers.get("x-forwarded-host", req.headers.get("host"))
+            if host:
+                base_url = f"{scheme}://{host}".rstrip("/")
+            elif hasattr(req, "base_url"):
+                base_url = str(req.base_url).rstrip("/")
 
-        with pc.Row(gap=2, justify="between", align="center") as idle_nodes_disaplay:
-            pc.Text("Number of Idle Nodes: ", pc.Span(f"{num}", bold=True, cssClass="mx-4 text-lg text-blue-600"),
-                    cssClass="px-2 rounded-lg")
+    if not base_url:
+        base_url = (os.getenv("PROXY_URL") or os.getenv("DASHBOARD_PUBLIC_URL") or "http://localhost:8123").rstrip("/")
 
-            # Refresh button to fetch the latest Slurm job states
-            pc.Button(
-                label="Refresh",
-                variant="outline",
-                icon="refresh-cw",
-                on_click=[
-                    CallTool(
-                        "get_all_mcp_server_info",
-                        onSuccess=SetState("mcp_servers", RESULT),
-                        onError=ShowToast("Failed to refresh status", variant="error"),
-                    ),
-                    CallTool(
-                        "number_of_idle_nodes",
-                        onSuccess=SetState("idle_nodes", RESULT),
-                        onError=ShowToast("Failed to get idle node number", variant="error"),
-                    ),
-                ],
-            )
-        with pc.Row(gap=2, justify="start", align="center") as launch_row:
-            pc.Input(
-                name="launch_mcp_name",
-                placeholder="Enter MCP server name...",
-                required=True,
-                maxLength=30,
-                cssClass="w-64",
-            )
-            mcp_name_text = Rx("launch_mcp_name")
-            with pc.If(Rx("launch_mcp_name") != ""):
-                pc.Button(
-                    label="1. Select Script",
-                    variant="default",
-                    icon="file-search",
-                    on_click=OpenFilePicker(
-                        accept=".sh", onSuccess=SetState("selected_files", RESULT)
-                    ),
-                )
-            with pc.Else():
-                pc.Button(
-                    label="1. Select Script",
-                    variant="default",
-                    disabled=True,
-                    icon="file-search",
-                )
+    dashboard_url = f"{base_url}/jlab/lqcd/mcp/dashboard?token={ticket}"
 
-            with pc.If(Rx("selected_files") != None):
-                pc.Button(
-                    label="2. Launch MCP Server",
-                    variant="default",
-                    icon="rocket",
-                    on_click=[
-                        SetState("is_launching", True),
-                        SetState("launch_waiting_counter", 6),
-                        CallTool(
-                            "launch_mcp_server_using_script",
-                            arguments={
-                                "mcp_name": mcp_name_text,
-                                "wait": False,
-                                "submission_script": Rx("selected_files")[0].data,
-                                "base64_content": True,
-                            },
-                            onSuccess=[
-                                AppendState("mcp_servers", RESULT),
-                                SetState("selected_files", None),
-                                SetState("is_launching", RESULT.slurm_job_state != "RUNNING"),
-                                ShowToast("MCP server launched!", variant="success"),
-                            ],
-                            onError=[
-                                ShowToast("Launch mcp server failed", variant="error"),
-                                SetState("is_launching", False),
-                            ],
-                        ),
-                        SetInterval(
-                            5000,
-                            while_=waiting_counter > 0,
-                            onTick=[
-                                CallTool(
-                                    "get_all_mcp_server_info",
-                                    onSuccess=[
-                                        SetState("mcp_servers", RESULT),
-                                        SetState(
-                                            "launch_waiting_counter",
-                                            waiting_counter - 1,
-                                        ),
-                                    ],
-                                    onError=[ShowToast("Failed to check server status", variant="error"),
-                                              SetState("is_launching", False),
-                                              SetState("launch_waiting_counter",0),
-                                              SetState("launch_mcp_name",""),
-                                            ],
-                                ),
-                            ],
-                            onComplete=[
-                                SetState("launch_mcp_name", ""),
-                                SetState("is_launching", False),
-                                ShowToast(
-                                    "MCP server launch polling completed.",
-                                    variant="info",
-                                ),
-                                CallTool(
-                                    "number_of_idle_nodes",
-                                    onSuccess=SetState("idle_nodes", RESULT),
-                                    onError=ShowToast("Failed to get idle node number", variant="error"),
-                                ),
-                            ],
-                        ),
-                    ],
-                )
-            with pc.Else():
-                pc.Button(
-                    label="2. Launch MCP Server",
-                    variant="default",
-                    disabled=True,
-                    icon="rocket",
-                )
-        pc.Separator()
+    # Try opening locally
+    opened = _open_browser_silently(dashboard_url)
 
-        # table of active servers
-        with pc.Table() as servers_table:
-            with pc.TableHeader():
-                with pc.TableRow():
-                    pc.TableHead(content="MCP Name")
-                    pc.TableHead(content="Status")
-                    pc.TableHead(content="Job ID")
-                    pc.TableHead(content="Owner")
-                    pc.TableHead(content="Actions")
-            with pc.TableBody():
-                with pc.ForEach("mcp_servers") as s:
-                    with pc.TableRow():
-                        pc.TableCell(str(s.mcp_name))
-                        with pc.TableCell():
-                            with pc.If(s.slurm_job_state == "RUNNING"):
-                                pc.Badge(label=str(s.slurm_job_state), variant="success")
-                            with pc.Elif(s.slurm_job_state == "PENDING"):
-                                pc.Badge(label=str(s.slurm_job_state), variant="info")
-                            with pc.Else():
-                                pc.Badge(label=str(s.slurm_job_state), variant="destructive")
+    # Query brief cluster info for LLM response
+    num_idle = await number_of_idle_nodes()
+    all_servers = await get_all_mcp_servers()
+    running_count = sum(1 for s in all_servers if s.slurm_job_state == "RUNNING")
 
-                        pc.TableCell(str(s.slurm_job_id))
-                        with pc.TableCell():
-                            with pc.If(s.owner == user):
-                                pc.Badge(label=str(s.owner), variant="success")
-                            with pc.Else():
-                                pc.Badge(label=str(s.owner), variant="warning")
+    status_msg = "Browser window opened automatically." if opened else "Please open the direct link below in your browser."
 
-                        with pc.TableCell():
-                            with pc.If(s.owner == user):
-                                with pc.ButtonGroup():
-                                    with pc.If(s.is_connected):
-                                        pc.Button(
-                                            label="Connect",
-                                            variant="outline",
-                                            cssClass="text-blue-500 hover:bg-blue-100 px-1",
-                                            disabled=True,
-                                        )
-                                        pc.Button(
-                                            label="Disconnect",
-                                            variant="outline",
-                                            cssClass="text-red-500 hover:bg-red-100 px-1",
-                                            on_click=[
-                                                CallTool(
-                                                    "disconnect_mcp_server",
-                                                    arguments={"mcp_name": s.mcp_name},
-                                                    onSuccess=[
-                                                        SetState(
-                                                            "connected_mcp_servers",
-                                                            RESULT,
-                                                        ),
-                                                        SendMessage(
-                                                            f"Please find and remove the MCP server named '{s.mcp_name}' "
-                                                            f"from my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json)."
-                                                        ),
-                                                    ],
-                                                ),
-                                            ],
-                                        )
-                                        pc.Button(
-                                            label="",
-                                            icon="trash-2",
-                                            variant="destructive",
-                                            on_click=[
-                                                CallTool(
-                                                    "cancel_mcp_server_by_jobid",
-                                                    arguments={"job_id": s.slurm_job_id},
-                                                    onSuccess=[
-                                                        SetState("connected_server", ""),
-                                                        SendMessage(
-                                                                f"Please find and remove the MCP server named '{s.mcp_name}' "
-                                                                f"from my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json)."
-                                                            ),
-                                                        ],
-                                                    onError=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
-                                                ),
-                                                SetInterval(2000,count=1,
-                                                    onComplete=[
-                                                        CallTool(
-                                                            "get_all_mcp_server_info",
-                                                            onSuccess=SetState("mcp_servers", RESULT),
-                                                            onError=ShowToast("Failed to refresh server status", variant="error"),
-                                                        ),
-                                                    ],
-                                                ),
-                                            ],
-                                        ),
-                                    with pc.Else():
-                                        pc.Button(
-                                            label="Connect",
-                                            variant="outline",
-                                            cssClass="text-blue-500 hover:bg-blue-100 px-1",
-                                            disabled=(s.slurm_job_state == "PENDING"),
-                                            on_click=[
-                                                CallTool(
-                                                    "connect_mcp_server",
-                                                    arguments={"mcp_name": s.mcp_name},
-                                                    onSuccess=[
-                                                        SetState(
-                                                            "connected_mcp_servers",
-                                                            RESULT,
-                                                        ),
-                                                        SendMessage(
-                                                            f"Please add a new StreamableHttp MCP server named '{s.mcp_name}' "
-                                                            f"to my IDE's MCP configuration file (e.g. on Linux ~/.config/Code/User/mcp.json or claude_desktop_config.json, but on MacOS ~/Library/Application Support/Code/User/mcp.json). "
-                                                            f"The URL for this server should use the same host and port as the current proxy server, "
-                                                            f"but with the path '/cloud/{s.mcp_name}/mcp'. Also, use the exact same authentication "
-                                                            f"token and headers as the proxy server."
-                                                        ),
-                                                        ShowToast(
-                                                            "Connected to MCP server!",
-                                                            variant="success",
-                                                        ),
-                                                    ],
-                                                    onError=ShowToast(
-                                                        "Failed to connect to MCP server. Please make sure you have added this MCP server to your IDE configuration file and try again.",
-                                                        variant="error",
-                                                    ),
-                                                ),
-                                            ],
-                                        )
-                                        pc.Button(
-                                            label="Disconnect",
-                                            variant="outline",
-                                            cssClass="text-red-500 hover:bg-red-100 px-1",
-                                            disabled=True,
-                                        )
-                                        pc.Button(
-                                            label="",
-                                            icon="trash-2",
-                                            variant="destructive",
-                                            on_click=[
-                                                CallTool(
-                                                    "cancel_mcp_server_by_jobid",
-                                                    arguments={"job_id": s.slurm_job_id},
-                                                    onError=ShowToast("Failed to cancel MCP server. Please try again.", variant="error"),
-                                                ),
-                                                SetInterval(2000,count=1,
-                                                    onComplete=[
-                                                        CallTool(
-                                                            "get_all_mcp_server_info",
-                                                            onSuccess=SetState("mcp_servers", RESULT),
-                                                            onError=ShowToast("Failed to refresh server status", variant="error"),
-                                                        ),
-                                                    ],
-                                                ),
-                                            ],
-                                        )
-                            with pc.Else():
-                                pc.Text("")
-        return PrefabApp(
-            title="LQCD Slurm Dashboard",
-            view=view,
-            theme=Presentation(accent="sky"),
-            state={
-                "mcp_servers": all_mcp_servers,
-                "selected_files": None,
-                "launch_mcp_name": "",
-                "mcp_name_entered": False,
-                "launch_waiting_counter": 6,
-                "idle_nodes": num_idle_nodes,
-                "is_launching": False,
-            },
-        )
+    return (
+        f"### 🚀 Slurm MCP Web Dashboard\n\n"
+        f"The Slurm MCP Dashboard has been prepared for user **`{user}`**.\n\n"
+        f"👉 **[Click Here to Open Dashboard]({dashboard_url})**\n\n"
+        f"- **Direct URL:** `{dashboard_url}`\n"
+        f"- **Idle Compute Nodes:** {num_idle}\n"
+        f"- **Running MCP Servers:** {running_count}\n"
+        f"- **Status:** {status_msg}\n\n"
+        f"Use the dashboard to monitor Slurm cluster capacity, launch GPU/CPU MCP servers, introspect tools, view logs, and copy MCP client configurations."
+    )

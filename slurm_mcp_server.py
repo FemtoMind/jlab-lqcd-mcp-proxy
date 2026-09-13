@@ -11,13 +11,16 @@
 # and come back later to continue their work.
 # The mcp server can be only used by the same user who launched it.
 import argparse
-
 import base64
+import glob
 import subprocess
 import asyncio
+import json
 import os
 import uvicorn
 import pwd
+from typing import Optional, Any
+from pydantic import Field
 from lqcd_logger import lqcd_logger
 import common_data as cdata
 
@@ -479,25 +482,36 @@ class SlurmSpawner:
         """Check the status of a slurm job."""
         try:
             result = subprocess.Popen(
-                ["squeue", "--job=" + job_id, "--format=%T", "-h"],
+                ["squeue", "--job=" + str(job_id), "--format=%T", "-h"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
             result.wait()
-            if result.stdout is None:
-                lqcd_logger.error(
-                    f"Failed to get slurm job information for job id: {job_id}"
-                )
-                raise Exception(
-                    f"Failed to get slurm job information for job id: {job_id}"
-                )
+            if result.stdout is not None:
+                job_state = result.stdout.read().strip()
+                if job_state:
+                    return job_state
 
-            job_state = result.stdout.read().strip()
+            # If not in active queue, check sacct for terminal state (FAILED, COMPLETED, CANCELLED, TIMEOUT, etc.)
+            sacct_res = subprocess.Popen(
+                ["sacct", "--job=" + str(job_id), "--format=State", "-n", "-P"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            sacct_res.wait()
+            if sacct_res.stdout is not None:
+                lines = sacct_res.stdout.read().splitlines()
+                if lines:
+                    first_line = lines[0].strip().split()[0]
+                    term_state = first_line.replace("+", "")
+                    if term_state:
+                        return term_state
         except Exception as e:
-            lqcd_logger.error(f"Failed to check slurm job: {e}")
+            lqcd_logger.error(f"Failed to check slurm job {job_id}: {e}")
             return None
-        return job_state
+        return "UNKNOWN"
 
     # Stop a mcp server by cancelling it
     async def stop_slurm_job(self, job_id: str) -> cdata.SlurmJobCancelStatus:
@@ -730,6 +744,197 @@ $cmd
             return None
 
         return job_id
+
+    # Get user's regular slurm jobs (from squeue and recent sacct)
+    async def get_user_regular_jobs(self, user: str) -> list[dict[str, Any]]:
+        """Retrieve regular Slurm jobs for a given user."""
+        jobs_dict: dict[str, dict[str, Any]] = {}
+        try:
+            # 1. Query active jobs via squeue
+            cmd_squeue = [
+                "squeue",
+                "-u",
+                user,
+                "--format=%i|%j|%T|%M|%l|%P|%D|%R|%Z",
+                "-h",
+            ]
+            proc = subprocess.Popen(
+                cmd_squeue,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            proc.wait()
+            if proc.stdout:
+                for line in proc.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("|")
+                    if len(parts) >= 8:
+                        job_id_str = parts[0].strip()
+                        jobs_dict[job_id_str] = {
+                            "job_id": int(job_id_str)
+                            if job_id_str.isdigit()
+                            else job_id_str,
+                            "job_name": parts[1].strip(),
+                            "state": parts[2].strip(),
+                            "time_used": parts[3].strip(),
+                            "time_limit": parts[4].strip(),
+                            "partition": parts[5].strip(),
+                            "nodes": int(parts[6].strip())
+                            if parts[6].strip().isdigit()
+                            else 1,
+                            "nodelist_or_reason": parts[7].strip(),
+                            "work_dir": parts[8].strip() if len(parts) > 8 else "",
+                            "is_active": True,
+                        }
+
+            # 2. Query recently completed/failed/cancelled jobs from sacct
+            cmd_sacct = [
+                "sacct",
+                "-u",
+                user,
+                "--format=JobID,JobName,State,Elapsed,Partition,AllocNodes,ExitCode,Submit,Start,End",
+                "-n",
+                "-P",
+                "-S",
+                "now-24hours",
+            ]
+            proc_sacct = subprocess.Popen(
+                cmd_sacct,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            proc_sacct.wait()
+            if proc_sacct.stdout:
+                for line in proc_sacct.stdout:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("|")
+                    if len(parts) >= 7:
+                        job_id_raw = parts[0].strip()
+                        # Ignore step jobs like 1234.batch or 1234.0
+                        if "." in job_id_raw:
+                            continue
+                        if job_id_raw not in jobs_dict:
+                            state_clean = (
+                                parts[2].strip().replace("+", "").split()[0]
+                            )
+                            jobs_dict[job_id_raw] = {
+                                "job_id": int(job_id_raw)
+                                if job_id_raw.isdigit()
+                                else job_id_raw,
+                                "job_name": parts[1].strip(),
+                                "state": state_clean,
+                                "time_used": parts[3].strip(),
+                                "time_limit": "N/A",
+                                "partition": parts[4].strip(),
+                                "nodes": int(parts[5].strip())
+                                if parts[5].strip().isdigit()
+                                else 1,
+                                "nodelist_or_reason": f"ExitCode: {parts[6].strip()}",
+                                "work_dir": "",
+                                "is_active": False,
+                                "submit_time": parts[7].strip()
+                                if len(parts) > 7
+                                else "",
+                                "start_time": parts[8].strip()
+                                if len(parts) > 8
+                                else "",
+                                "end_time": parts[9].strip()
+                                if len(parts) > 9
+                                else "",
+                            }
+        except Exception as e:
+            lqcd_logger.error(
+                f"Error querying regular slurm jobs for {user}: {e}"
+            )
+
+        all_jobs = list(jobs_dict.values())
+
+        def sort_key(j):
+            jid = j.get("job_id", 0)
+            is_act = 1 if j.get("is_active") else 0
+            val = (
+                int(jid)
+                if isinstance(jid, int)
+                or (isinstance(jid, str) and str(jid).isdigit())
+                else 0
+            )
+            return (is_act, val)
+
+        all_jobs.sort(key=sort_key, reverse=True)
+        return all_jobs
+
+    async def get_regular_job_logs(
+        self, job_id: int | str, user: str = ""
+    ) -> dict[str, Any]:
+        """Fetch stdout / stderr log contents for a Slurm job."""
+        job_id_str = str(job_id)
+        patterns = [
+            f"slurm-{job_id_str}.out",
+            f"/tmp/slurm-{job_id_str}.out",
+            f"/home/{user}/slurm-{job_id_str}.out" if user else "",
+            f"{os.path.expanduser('~')}/slurm-{job_id_str}.out",
+        ]
+        patterns = [p for p in patterns if p]
+
+        try:
+            proc = subprocess.Popen(
+                ["scontrol", "show", "job", job_id_str],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            proc.wait()
+            if proc.stdout:
+                for line in proc.stdout:
+                    for token in line.split():
+                        if token.startswith("StdOut=") or token.startswith(
+                            "StdErr="
+                        ):
+                            path = token.split("=", 1)[1].strip()
+                            if path and path not in patterns:
+                                patterns.insert(0, path)
+        except Exception as e:
+            lqcd_logger.debug(
+                f"Could not query scontrol for job {job_id_str}: {e}"
+            )
+
+        found_content = None
+        found_path = None
+        for p in patterns:
+            matches = glob.glob(p)
+            if matches:
+                found_path = matches[0]
+                try:
+                    with open(
+                        found_path, "r", encoding="utf-8", errors="replace"
+                    ) as f:
+                        found_content = f.read()
+                    break
+                except Exception:
+                    pass
+
+        if found_content is None:
+            return {
+                "status": "not_found",
+                "job_id": int(job_id_str)
+                if job_id_str.isdigit()
+                else job_id_str,
+                "logs": f"Log file for job {job_id_str} not found or not yet flushed by Slurm.\nChecked locations:\n"
+                + "\n".join(patterns[:5]),
+            }
+
+        return {
+            "status": "success",
+            "job_id": int(job_id_str) if job_id_str.isdigit() else job_id_str,
+            "path": found_path,
+            "logs": found_content,
+        }
 
 
 """
@@ -1397,9 +1602,10 @@ async def submit_mcp_server_as_slurm_job(
         return backend_mcp_server
 
     backend_mcp_server.slurm_job_name = job_info.job_name
-    backend_mcp_server.mcp_name = job_info.job_name
-
-    # Now we need to check the job status
+    if mcp_name and mcp_name != "N/A":
+        backend_mcp_server.mcp_name = mcp_name
+    elif not backend_mcp_server.mcp_name or backend_mcp_server.mcp_name == "N/A":
+        backend_mcp_server.mcp_name = job_info.job_name
     job_status = await lqcd_slurm_manager.check_slurm_job_state(jobid)
     if job_status is None:
         lqcd_logger.error("Failed to get slurm job status.")
@@ -1916,6 +2122,368 @@ async def launch_mcp_server_using_remote_file(
         submitted_mcp_server, wait, mcp_name, ctx
     )
     return mcp_server
+
+
+# Introspect tools on a running backend Slurm MCP server
+@slurm_mcp.tool(
+    name="list_backend_tools",
+    description="List all available tools, their descriptions, and parameters on a running backend Slurm MCP server.",
+    tags={"slurm", "backend"},
+)
+async def list_backend_tools(mcp_name: str, ctx: ServerContext) -> list[dict[str, Any]]:
+    """List tools on a running backend MCP server."""
+    backend_mcp_server: Optional[cdata.SlurmMcpServer] = (
+        await lqcd_mcp_servers.get_slurm_mcp_server(mcp_name)
+    )
+    if not backend_mcp_server:
+        await ctx.error(f"Cannot find MCP server with name '{mcp_name}'.")
+        lqcd_logger.error(f"Cannot find MCP server with name '{mcp_name}'.")
+        return []
+
+    if backend_mcp_server.slurm_job_state != "RUNNING" or not backend_mcp_server.url:
+        await ctx.warning(
+            f"MCP server '{mcp_name}' is currently {backend_mcp_server.slurm_job_state} (not RUNNING)."
+        )
+        return []
+
+    from fastmcp import Client
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    transport = StreamableHttpTransport(url=backend_mcp_server.url)
+    tools_list = []
+    try:
+        async with asyncio.timeout(15):
+            async with Client(transport=transport) as client:
+                tools = await client.list_tools()
+                for t in tools:
+                    params = (
+                        getattr(t, "inputSchema", None)
+                        or getattr(t, "input_schema", None)
+                        or getattr(t, "parameters", None)
+                    )
+                    if params is None and isinstance(t, dict):
+                        params = (
+                            t.get("inputSchema")
+                            or t.get("input_schema")
+                            or t.get("parameters")
+                            or {}
+                        )
+                    if params is not None and not isinstance(params, dict):
+                        try:
+                            params = (
+                                params.model_dump()
+                                if hasattr(params, "model_dump")
+                                else dict(params)
+                            )
+                        except Exception:
+                            params = {}
+
+                    tool_name = (
+                        getattr(t, "name", None)
+                        or (t.get("name") if isinstance(t, dict) else None)
+                        or "unknown"
+                    )
+                    tool_desc = (
+                        getattr(t, "description", None)
+                        or (t.get("description") if isinstance(t, dict) else None)
+                        or ""
+                    )
+
+                    tools_list.append({
+                        "name": str(tool_name),
+                        "description": str(tool_desc),
+                        "parameters": params or {},
+                    })
+    except Exception as e:
+        lqcd_logger.error(f"Error querying tools from backend '{mcp_name}': {e}")
+        await ctx.error(f"Error querying tools from backend '{mcp_name}': {e}")
+        return []
+
+    return tools_list
+
+
+# Execute a tool on a running backend Slurm MCP server
+@slurm_mcp.tool(
+    name="call_backend_tool",
+    description="Execute a specific tool on a running backend Slurm MCP server and return its result.",
+    tags={"slurm", "backend"},
+)
+async def call_backend_tool(
+    mcp_name: str,
+    tool_name: str,
+    arguments: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Dictionary of arguments to pass to the backend tool",
+    ),
+    ctx: Optional[ServerContext] = None,
+) -> str:
+    """Execute a tool on a running backend Slurm MCP server."""
+    backend_mcp_server: Optional[cdata.SlurmMcpServer] = (
+        await lqcd_mcp_servers.get_slurm_mcp_server(mcp_name)
+    )
+    if not backend_mcp_server:
+        if ctx:
+            await ctx.error(f"Cannot find MCP server with name '{mcp_name}'.")
+        return f"Error: MCP server '{mcp_name}' not found."
+
+    if backend_mcp_server.slurm_job_state != "RUNNING" or not backend_mcp_server.url:
+        if ctx:
+            await ctx.warning(
+                f"MCP server '{mcp_name}' is not running (state: {backend_mcp_server.slurm_job_state})."
+            )
+        return f"Error: MCP server '{mcp_name}' is not running (state: {backend_mcp_server.slurm_job_state})."
+
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except Exception:
+            pass
+    if not isinstance(arguments, dict):
+        arguments = {}
+
+    from fastmcp import Client
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    transport = StreamableHttpTransport(url=backend_mcp_server.url)
+    try:
+        async with asyncio.timeout(60):
+            async with Client(transport=transport) as client:
+                result = await client.call_tool(tool_name, arguments)
+                if hasattr(result, "content") and result.content:
+                    outputs = []
+                    for c in result.content:
+                        text_val = getattr(c, "text", None)
+                        if text_val is not None:
+                            outputs.append(str(text_val))
+                        else:
+                            outputs.append(str(c))
+                    prefix = "[Error] " if getattr(result, "isError", False) else ""
+                    return prefix + ("\n".join(outputs) if outputs else str(result))
+                return str(result)
+    except Exception as e:
+        lqcd_logger.error(
+            f"Error invoking tool '{tool_name}' on backend '{mcp_name}': {e}"
+        )
+        if ctx:
+            await ctx.error(
+                f"Error invoking tool '{tool_name}' on backend '{mcp_name}': {e}"
+            )
+        return f"Error executing tool '{tool_name}' on '{mcp_name}': {str(e)}"
+
+
+# ==============================================================================
+# Regular Slurm Job Tools
+# ==============================================================================
+
+
+@slurm_mcp.tool(
+    name="submit_regular_slurm_job",
+    description="""
+    Submit a regular Slurm batch job to the JLab LQCD cluster using a complete Slurm batch submission script.
+    The job is submitted on behalf of the authenticated session user.
+    If base64_content is True, the submission script will be decoded from base64 string.
+    """,
+    tags={"slurm", "regular_slurm", "Jlab"},
+)
+async def submit_regular_slurm_job(
+    job_name: str,
+    submission_script: str,
+    base64_content: bool = False,
+    ctx: Optional[ServerContext] = None,
+) -> dict[str, Any]:
+    """Submit a regular Slurm batch job using a submission script."""
+    if not ctx:
+        return {"status": "error", "message": "No server context provided."}
+    sid = ctx.session_id
+    user = await lqcd_session_manager().get_resource(sid, "username")
+    if not user:
+        await ctx.error("Cannot find username associated with this session.")
+        return {
+            "status": "error",
+            "message": "Cannot find username associated with this session.",
+        }
+
+    if base64_content:
+        try:
+            submission_script = base64.b64decode(submission_script).decode(
+                "utf-8"
+            )
+        except Exception as e:
+            await ctx.error(f"Failed to decode base64 script: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to decode base64 script: {e}",
+            }
+
+    try:
+        gid = pwd.getpwnam(user).pw_gid
+    except Exception as e:
+        lqcd_logger.warning(f"Could not lookup gid for user {user}: {e}")
+        gid = 0
+
+    lqcd_logger.info(
+        f"Submitting regular Slurm job '{job_name}' for user {user}"
+    )
+    job_id = await lqcd_slurm_manager.submit_slurm_job(
+        user, gid, job_name, submission_script
+    )
+    if not job_id:
+        await ctx.error(f"Failed to submit regular Slurm job '{job_name}'.")
+        return {
+            "status": "error",
+            "message": f"Failed to submit regular Slurm job '{job_name}'.",
+        }
+
+    job_state = (
+        await lqcd_slurm_manager.check_slurm_job_state(str(job_id)) or "PENDING"
+    )
+    await ctx.info(
+        f"Successfully submitted regular Slurm job '{job_name}' with Job ID {job_id} (State: {job_state})."
+    )
+    return {
+        "status": "success",
+        "job_id": int(job_id) if job_id.isdigit() else job_id,
+        "job_name": job_name,
+        "owner": user,
+        "state": job_state,
+        "message": f"Regular Slurm job '{job_name}' submitted successfully with Job ID {job_id}.",
+    }
+
+
+@slurm_mcp.tool(
+    name="submit_regular_slurm_job_using_file",
+    description="""
+    Submit a regular Slurm batch job using a script file available on the machine where the proxy server is running.
+    The job is submitted on behalf of the authenticated session user.
+    """,
+    tags={"slurm", "regular_slurm", "Jlab"},
+)
+async def submit_regular_slurm_job_using_file(
+    job_name: str,
+    script_file: str,
+    ctx: Optional[ServerContext] = None,
+) -> dict[str, Any]:
+    """Submit a regular Slurm batch job using a script file."""
+    if not ctx:
+        return {"status": "error", "message": "No server context provided."}
+    sid = ctx.session_id
+    user = await lqcd_session_manager().get_resource(sid, "username")
+    if not user:
+        await ctx.error("Cannot find username associated with this session.")
+        return {
+            "status": "error",
+            "message": "Cannot find username associated with this session.",
+        }
+
+    if not os.path.exists(script_file):
+        await ctx.error(f"Script file '{script_file}' does not exist.")
+        return {
+            "status": "error",
+            "message": f"Script file '{script_file}' does not exist.",
+        }
+
+    try:
+        with open(script_file, "r", encoding="utf-8") as f:
+            submission_script = f.read()
+    except Exception as e:
+        await ctx.error(f"Failed to read script file '{script_file}': {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to read script file '{script_file}': {e}",
+        }
+
+    return await submit_regular_slurm_job(
+        job_name, submission_script, base64_content=False, ctx=ctx
+    )
+
+
+@slurm_mcp.tool(
+    name="get_my_regular_slurm_jobs",
+    description="Retrieve all regular Slurm batch jobs owned by the authenticated user.",
+    tags={"slurm", "regular_slurm"},
+)
+async def get_my_regular_slurm_jobs(
+    ctx: Optional[ServerContext] = None,
+) -> list[dict[str, Any]]:
+    """Retrieve regular Slurm batch jobs for the current authenticated user."""
+    if not ctx:
+        return []
+    user = await lqcd_session_manager().get_resource(ctx.session_id, "username")
+    if not user:
+        await ctx.error("Cannot find username associated with this session.")
+        return []
+    return await lqcd_slurm_manager.get_user_regular_jobs(user)
+
+
+@slurm_mcp.tool(
+    name="check_regular_slurm_job_status",
+    description="Check the current status and execution details of a regular Slurm job by Job ID.",
+    tags={"slurm", "regular_slurm"},
+)
+async def check_regular_slurm_job_status(
+    job_id: int,
+    ctx: Optional[ServerContext] = None,
+) -> dict[str, Any]:
+    """Check status of a regular Slurm job."""
+    job_id_str = str(job_id)
+    state = await lqcd_slurm_manager.check_slurm_job_state(job_id_str)
+    return {
+        "job_id": job_id,
+        "state": state or "UNKNOWN",
+    }
+
+
+@slurm_mcp.tool(
+    name="cancel_regular_slurm_job",
+    description="Cancel a running or pending regular Slurm batch job by Job ID.",
+    tags={"slurm", "regular_slurm"},
+)
+async def cancel_regular_slurm_job(
+    job_id: int,
+    ctx: Optional[ServerContext] = None,
+) -> dict[str, Any]:
+    """Cancel a regular Slurm job."""
+    res = await lqcd_slurm_manager.stop_slurm_job(str(job_id))
+    is_success = (
+        getattr(res, "status", None)
+        == cdata.SlurmJobCancelStatus._status_value.SUCCESS
+    )
+    msg = getattr(res, "error_message", "")
+    if ctx:
+        if is_success:
+            await ctx.info(
+                f"Regular Slurm job {job_id} cancelled successfully."
+            )
+        else:
+            await ctx.warning(
+                f"Failed to cancel regular Slurm job {job_id}: {msg}"
+            )
+    return {
+        "job_id": job_id,
+        "status": "success" if is_success else "failed",
+        "message": msg,
+    }
+
+
+@slurm_mcp.tool(
+    name="get_regular_slurm_job_logs",
+    description="Retrieve the stdout/stderr log output of a regular Slurm batch job by Job ID.",
+    tags={"slurm", "regular_slurm"},
+)
+async def get_regular_slurm_job_logs(
+    job_id: int,
+    ctx: Optional[ServerContext] = None,
+) -> dict[str, Any]:
+    """Get log output for a regular Slurm job."""
+    user = ""
+    if ctx:
+        user = (
+            await lqcd_session_manager().get_resource(
+                ctx.session_id, "username"
+            )
+            or ""
+        )
+    return await lqcd_slurm_manager.get_regular_job_logs(job_id, user)
 
 
 # import UI part of the server

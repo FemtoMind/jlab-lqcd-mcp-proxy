@@ -82,6 +82,73 @@ async def remote_exec(cmd: str, ctx: Context) -> str:
     return result.stdout
 
 
+@test_mcp.tool(
+    description="Read the tail of a file. Returns the last lines immediately, or optionally follows new writes."
+)
+async def tail_file(
+    filepath: str,
+    lines: int = 50,
+    follow_seconds: int = 0,
+    ctx: Context | None = None,
+) -> str:
+    """
+    - If follow_seconds == 0: Returns last `lines` immediately (instant).
+    - If follow_seconds > 0: Follows for new output, returning early if stream is idle.
+    """
+    lqcd_logger.info(
+        f"tail_file on {filepath} (lines={lines}, follow_seconds={follow_seconds}, session={getattr(ctx, 'session_id', 'unknown')})"
+    )
+    if not os.path.exists(filepath):
+        return f"Error: File '{filepath}' does not exist."
+
+    # Fast path: instant return
+    if follow_seconds <= 0:
+        res = subprocess.run(
+            ["tail", "-n", str(lines), filepath],
+            capture_output=True,
+            text=True,
+        )
+        return res.stdout if res.returncode == 0 else res.stderr
+
+    # Follow mode with 1.5s idle detection
+    duration = min(follow_seconds, 30)
+    cmd = ["tail", "-n", str(lines), "-f", filepath]
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    collected = []
+    end_time = asyncio.get_event_loop().time() + duration
+
+    try:
+        while asyncio.get_event_loop().time() < end_time:
+            try:
+                if process.stdout is None:
+                    break
+                # Wait up to 1.5s for the next line; if idle, finish early
+                line = await asyncio.wait_for(process.stdout.readline(), timeout=1.5)
+                if not line:
+                    break
+                decoded = line.decode(errors="replace").rstrip()
+                collected.append(decoded)
+                if ctx:
+                    await ctx.info(decoded)
+            except asyncio.TimeoutError:
+                # Stream went idle/quiet
+                if collected:
+                    break
+    finally:
+        try:
+            process.terminate()
+            await process.wait()
+        except Exception:
+            pass
+
+    return "\n".join(collected) if collected else f"(No new lines in {filepath})"
+
+
 # Get startlette app for uvicorn
 test_mcp_app = test_mcp.http_app(
     path="/mcp", json_response=False, stateless_http=False, transport="http"

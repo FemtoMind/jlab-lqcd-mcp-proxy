@@ -20,6 +20,24 @@ import platform
 console = Console()
 
 
+def _get_vscode_mcp_config_paths(system: str) -> list[str]:
+    if system == "Linux":
+        user_dir = os.path.expanduser("~/.config/Code/User")
+    elif system == "Darwin":
+        user_dir = os.path.expanduser("~/Library/Application Support/Code/User")
+    else:
+        return []
+
+    paths = [os.path.join(user_dir, "mcp.json")]
+    profiles_dir = os.path.join(user_dir, "profiles")
+    if os.path.isdir(profiles_dir):
+        for profile_id in os.listdir(profiles_dir):
+            profile_path = os.path.join(profiles_dir, profile_id)
+            if os.path.isdir(profile_path):
+                paths.append(os.path.join(profile_path, "mcp.json"))
+    return paths
+
+
 # Try to open the browser, but redirect stdout and stderr at the OS level
 # to /dev/null to hide any error/warning messages from xdg-open/browsers
 # in headless or misconfigured environments.
@@ -418,13 +436,17 @@ def update_mcp_json(
     # find out I am on Mac or Linux for better instructions
     system = platform.system()
     if system == "Linux":
+        vscode_paths = _get_vscode_mcp_config_paths(system)
         target_configs = [
-            {
-                "path": os.path.expanduser("~/.config/Code/User/mcp.json"),
-                "entry_key": "servers",
-                "server_name": "jlab-lqcd-mcp-proxy",
-                "format": "vscode",
-            },
+            *[
+                {
+                    "path": p,
+                    "entry_key": "servers",
+                    "server_name": "jlab-lqcd-mcp-proxy",
+                    "format": "vscode",
+                }
+                for p in vscode_paths
+            ],
             {
                 "path": os.path.expanduser("~/.gemini/config/mcp_config.json"),
                 "entry_key": "mcpServers",
@@ -439,13 +461,17 @@ def update_mcp_json(
             },
         ]
     elif system == "Darwin":
+        vscode_paths = _get_vscode_mcp_config_paths(system)
         target_configs = [
-            {
-                "path": os.path.expanduser("~/Library/Application Support/Code/User/mcp.json"),
-                "entry_key": "servers",
-                "server_name": "jlab-lqcd-mcp-proxy",
-                "format": "vscode",
-            },
+            *[
+                {
+                    "path": p,
+                    "entry_key": "servers",
+                    "server_name": "jlab-lqcd-mcp-proxy",
+                    "format": "vscode",
+                }
+                for p in vscode_paths
+            ],
             {
                 "path": os.path.expanduser("~/.gemini/config/mcp_config.json"),
                 "entry_key": "mcpServers",
