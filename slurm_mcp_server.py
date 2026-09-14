@@ -35,6 +35,7 @@ from fastmcp.server.middleware import Middleware, MiddlewareContext
 # import token validation helper
 from lqcd_oidc_auth import validate_authorized_token
 from lqcd_oidc_auth import get_local_account
+from lqcd_oidc_auth import can_user_launch_mcp
 
 # Get process owner
 from server_util import get_process_owner
@@ -960,18 +961,28 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
     # check user name is empty or not. If it is not empty, just use it for test
     real_username = username.strip()
     if len(real_username) > 0:
+        allow_mcp = can_user_launch_mcp(real_username)
         # Need to register local account to session manager
         await lqcd_session_manager().register(ctx.session_id, "username", username)
+        await lqcd_session_manager().register(ctx.session_id, "allow_mcp", allow_mcp)
 
         # output some information
         lqcd_logger.info(
-            "Use provided username {} as local account for test.".format(username)
+            "Use provided username {} as local account for test (allow_mcp={}).".format(
+                username, allow_mcp
+            )
         )
         await ctx.info(
-            "Use provided username {} as local account for test.".format(username)
+            "Use provided username {} as local account for test (allow_mcp={}).".format(
+                username, allow_mcp
+            )
         )
 
-        return {"user_id": username, "user_account": username}
+        return {
+            "user_id": username,
+            "user_account": username,
+            "allow_mcp": allow_mcp,
+        }
 
     lqcd_logger.info("Validating user identity")
 
@@ -981,22 +992,22 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
         # get request from request context
         if ctx.request_context is None:
             lqcd_logger.warning("Request context is None")
-            return {"user_id": "unknown", "user_account": "unknown"}
+            return {"user_id": "unknown", "user_account": "unknown", "allow_mcp": False}
 
         req = ctx.request_context.request
         if req is None:
             lqcd_logger.warning("Request is None")
-            return {"user_id": "unknown", "user_account": "unknown"}
+            return {"user_id": "unknown", "user_account": "unknown", "allow_mcp": False}
 
         # get authorization header
         auth_header = req.headers.get("authorization")
         if auth_header is None:
             lqcd_logger.warning("Authorization header is None")
-            return {"user_id": "unknown", "user_account": "unknown"}
+            return {"user_id": "unknown", "user_account": "unknown", "allow_mcp": False}
 
         if not auth_header.startswith("Bearer "):
             lqcd_logger.warning("Authorization header is not Bearer token")
-            return {"user_id": "unknown", "user_account": "unknown"}
+            return {"user_id": "unknown", "user_account": "unknown", "allow_mcp": False}
         else:
             # get token from authorization header
             token = auth_header.split(" ")[1]
@@ -1025,14 +1036,22 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
             except Exception as e:
                 lqcd_logger.debug(f"DEBUG: Token validation failed: {e}")
 
-    # Convert user identity to local account
+    # Convert user identity to local account and check permissions
     local_account = get_local_account(user_login)
-    response = {"user_id": user_login, "user_account": local_account}
+    allow_mcp = can_user_launch_mcp(user_login) or (
+        can_user_launch_mcp(local_account) if local_account else False
+    )
+    response = {
+        "user_id": user_login,
+        "user_account": local_account,
+        "allow_mcp": allow_mcp,
+    }
     if local_account is not None:
-        # Need to register local account to session manager
+        # Need to register local account and permissions to session manager
         await lqcd_session_manager().register(ctx.session_id, "username", local_account)
+        await lqcd_session_manager().register(ctx.session_id, "allow_mcp", allow_mcp)
         lqcd_logger.info(
-            f"Mapped user identity '{user_login}' to local account '{local_account}'."
+            f"Mapped user identity '{user_login}' to local account '{local_account}' (allow_mcp={allow_mcp})."
         )
     else:
         lqcd_logger.warning(
@@ -1575,6 +1594,23 @@ async def submit_mcp_server_as_slurm_job(
 ) -> cdata.SlurmMcpServer:
     "Submit an mcp server as a slurm job with a given slurm script."
 
+    # Check MCP launch permission
+    allow_mcp = await lqcd_session_manager().get_resource(ctx.session_id, "allow_mcp")
+    if allow_mcp is None:
+        allow_mcp = can_user_launch_mcp(user)
+
+    if not allow_mcp:
+        err_msg = (
+            f"Permission Denied: User '{user}' is not authorized to launch interactive MCP servers on cluster nodes. "
+            "Please use submit_regular_slurm_job instead."
+        )
+        lqcd_logger.warning(
+            f"SECURITY ALERT: Unauthorized MCP server launch attempt by user '{user}' in session {ctx.session_id}."
+        )
+        await ctx.error(err_msg)
+        backend_mcp_server.error_message = err_msg
+        return backend_mcp_server
+
     # submit job using the script
     gid = pwd.getpwnam(user).pw_gid  # get the group id of the user
     jobid = await lqcd_slurm_manager.submit_slurm_job(
@@ -1692,6 +1728,23 @@ async def launch_mcp_server_on_slurm_or_cloud(
         backend_mcp_server.error_message = (
             "Cannot find username associated with this session."
         )
+        return backend_mcp_server
+
+    # Check MCP launch permission early before interactive prompt
+    allow_mcp = await lqcd_session_manager().get_resource(sid, "allow_mcp")
+    if allow_mcp is None:
+        allow_mcp = can_user_launch_mcp(user)
+
+    if not allow_mcp:
+        err_msg = (
+            f"Permission Denied: User '{user}' is not authorized to launch interactive MCP servers on cluster nodes. "
+            "Please use submit_regular_slurm_job instead."
+        )
+        lqcd_logger.warning(
+            f"SECURITY ALERT: Unauthorized MCP server launch attempt by user '{user}' in session {sid}."
+        )
+        await ctx.error(err_msg)
+        backend_mcp_server.error_message = err_msg
         return backend_mcp_server
 
     lqcd_logger.info("User {} is submitting a mcp analysis server.".format(user))
@@ -1934,6 +1987,23 @@ async def launch_mcp_server_script_on_slurm(
         )
         return backend_mcp_server
 
+    # Check MCP launch permission early
+    allow_mcp = await lqcd_session_manager().get_resource(sid, "allow_mcp")
+    if allow_mcp is None:
+        allow_mcp = can_user_launch_mcp(user)
+
+    if not allow_mcp:
+        err_msg = (
+            f"Permission Denied: User '{user}' is not authorized to launch interactive MCP servers on cluster nodes. "
+            "Please use submit_regular_slurm_job instead."
+        )
+        lqcd_logger.warning(
+            f"SECURITY ALERT: Unauthorized MCP server launch attempt by user '{user}' in session {sid}."
+        )
+        await ctx.error(err_msg)
+        backend_mcp_server.error_message = err_msg
+        return backend_mcp_server
+
     lqcd_logger.info("User {} is submitting a mcp analysis server.".format(user))
 
     lqcd_logger.debug(
@@ -2080,6 +2150,23 @@ async def launch_mcp_server_using_remote_file(
         backend_mcp_server.error_message = (
             "Cannot find username associated with this session."
         )
+        return backend_mcp_server
+
+    # Check MCP launch permission early
+    allow_mcp = await lqcd_session_manager().get_resource(sid, "allow_mcp")
+    if allow_mcp is None:
+        allow_mcp = can_user_launch_mcp(user)
+
+    if not allow_mcp:
+        err_msg = (
+            f"Permission Denied: User '{user}' is not authorized to launch interactive MCP servers on cluster nodes. "
+            "Please use submit_regular_slurm_job instead."
+        )
+        lqcd_logger.warning(
+            f"SECURITY ALERT: Unauthorized MCP server launch attempt by user '{user}' in session {sid}."
+        )
+        await ctx.error(err_msg)
+        backend_mcp_server.error_message = err_msg
         return backend_mcp_server
 
     # Read the script file

@@ -55,28 +55,59 @@ def read_oidc_auth_info():
 
 
 # Load user account mapping from a JSON file
-__user_account_mapping: dict[str, str] = {}
+__user_account_mapping: dict[str, Any] = {}
+__user_account_mapping_mtime: float = 0.0
 
 
-def load_user_account_mapping():
-    global __user_account_mapping
+def load_user_account_mapping(force: bool = False):
+    global __user_account_mapping, __user_account_mapping_mtime
     file_path = os.getenv("LQCDMCP_USERID_MAP_FILE", None)
     if file_path is None:
         lqcd_logger.error("Error: LQCDMCP_USERID_MAP_FILE is not set.")
         return {}
 
     try:
+        current_mtime = os.path.getmtime(file_path)
+        if not force and current_mtime == __user_account_mapping_mtime and __user_account_mapping:
+            return __user_account_mapping
+
         with open(file_path, "r") as f:
             __user_account_mapping = json.load(f)
+            __user_account_mapping_mtime = current_mtime
+            lqcd_logger.info(f"User account mapping loaded/reloaded from '{file_path}' (mtime: {current_mtime}).")
     except Exception as e:
         lqcd_logger.error(f"Error loading user account mapping: {e}")
         return {}
-    lqcd_logger.info("User account mapping loaded successfully.")
+    return __user_account_mapping
 
 
-# Look up local account by user id
+# Look up local account by user id (supports both old string format and new dict format)
 def get_local_account(user_id: str) -> str | None:
-    return __user_account_mapping.get(user_id, None)
+    load_user_account_mapping()
+    val = __user_account_mapping.get(user_id, None)
+    if isinstance(val, dict):
+        return val.get("account", None)
+    elif isinstance(val, str):
+        return val
+    return None
+
+
+# Check if user has MCP launch privilege
+def can_user_launch_mcp(user_id: str) -> bool:
+    """Check whether user identity (e.g. email) or local account has MCP launch permission."""
+    load_user_account_mapping()
+    val = __user_account_mapping.get(user_id, None)
+    if isinstance(val, dict):
+        return bool(val.get("mcp", False))
+    elif isinstance(val, str):
+        return False
+
+    # Also check if user_id passed is already the local account name
+    for _, config in __user_account_mapping.items():
+        if isinstance(config, dict) and config.get("account") == user_id:
+            return bool(config.get("mcp", False))
+
+    return False
 
 
 def validate_globus_rs_token(token: str) -> tuple[bool, dict | None]:

@@ -788,6 +788,35 @@
       </div>
     </div>
 
+    <!-- Slurm User Project Information Card -->
+    <div id="slurm-project-card" style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 20px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+        <div style="width: 44px; height: 44px; border-radius: var(--radius-md); background: rgba(99, 102, 241, 0.15); color: #818cf8; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+          📁
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <h3 style="font-size: 1rem; font-weight: 600; color: var(--text-main); margin: 0;">Slurm Project Information</h3>
+            <span id="proj-default-badge" class="badge" style="background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); font-size: 0.75rem; padding: 2px 8px;">
+              Default Project: <strong id="proj-default-account" style="font-family: 'JetBrains Mono', monospace;">--</strong>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;" id="proj-accounts-list">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span>
+            <span class="badge" style="background: var(--bg-card); color: var(--text-dim); font-size: 0.75rem;">Loading...</span>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <div style="text-align: right;">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">MCP Launch Status</div>
+          <div id="proj-mcp-status" style="font-size: 0.85rem; font-weight: 600; color: #10b981; margin-top: 2px;">
+            Checking...
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Dashboard Mode Tabs -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; flex-wrap: wrap; gap: 12px;">
       <div class="filter-tabs" style="font-size: 0.95rem;">
@@ -815,8 +844,8 @@
       <!-- Actions and Filters Bar -->
       <div class="control-bar">
         <div class="filter-tabs">
-          <button class="tab-btn active" id="tab-all" onclick="setFilter('all')">All Servers</button>
-          <button class="tab-btn" id="tab-mine" onclick="setFilter('mine')">My Servers</button>
+          <button class="tab-btn active" id="tab-mine" onclick="setFilter('mine')">My Servers</button>
+          <button class="tab-btn" id="tab-all" onclick="setFilter('all')">All Servers</button>
         </div>
       </div>
 
@@ -1201,7 +1230,7 @@
     let authToken = "";
     let currentUser = "";
     let allServers = [];
-    let activeFilter = "all";
+    let activeFilter = "mine";
 
     // Polling & Auto-Pause Settings
     const POLL_INTERVAL_SECONDS = 30;     // Standard background poll frequency (30s)
@@ -1301,6 +1330,52 @@
               `<option value="${a}">${a}</option>`
             ).join("");
           }
+
+          // Populate Slurm Project Information Card
+          const defaultAcc = statusData.default_account || (statusData.accounts && statusData.accounts[0]) || "N/A";
+          const defAccEl = document.getElementById("proj-default-account");
+          if (defAccEl) defAccEl.textContent = defaultAcc;
+
+          const accListEl = document.getElementById("proj-accounts-list");
+          if (accListEl && statusData.accounts && statusData.accounts.length > 0) {
+            accListEl.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span>` +
+              statusData.accounts.map(acc => `
+                <span class="badge" style="background: ${acc === defaultAcc ? 'rgba(59, 130, 246, 0.18)' : 'var(--bg-card)'}; color: ${acc === defaultAcc ? '#93c5fd' : 'var(--text-main)'}; border: 1px solid ${acc === defaultAcc ? 'rgba(59, 130, 246, 0.35)' : 'var(--border-color)'}; font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; padding: 2px 8px;">
+                  ${escapeHtml(acc)} ${acc === defaultAcc ? '★' : ''}
+                </span>
+              `).join("");
+          } else if (accListEl) {
+            accListEl.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects: None found</span>`;
+          }
+
+          const mcpStatusEl = document.getElementById("proj-mcp-status");
+          if (mcpStatusEl) {
+            if (statusData.allow_mcp === true) {
+              mcpStatusEl.innerHTML = `<span style="color: #34d399; display: flex; align-items: center; gap: 4px;">✅ Authorized (MCP + Regular Jobs)</span>`;
+            } else {
+              mcpStatusEl.innerHTML = `<span style="color: #f59e0b; display: flex; align-items: center; gap: 4px;">🚫 Restricted (Regular Jobs Only)</span>`;
+            }
+          }
+
+          // Handle MCP launch permission UI state
+          const mcpLaunchBtn = document.querySelector("#mcp-actions-bar button");
+          if (mcpLaunchBtn) {
+            if (statusData.allow_mcp === false) {
+              mcpLaunchBtn.classList.remove("btn-primary");
+              mcpLaunchBtn.classList.add("btn-secondary");
+              mcpLaunchBtn.innerHTML = "🚫 Launch MCP Restricted";
+              mcpLaunchBtn.title = "Permission Denied: Your account is not authorized to launch interactive MCP servers.";
+              mcpLaunchBtn.onclick = () => {
+                showToast("⛔ Permission Denied: Your account is restricted from launching interactive MCP servers. Please submit regular Slurm jobs instead.");
+              };
+            } else {
+              mcpLaunchBtn.classList.add("btn-primary");
+              mcpLaunchBtn.classList.remove("btn-secondary");
+              mcpLaunchBtn.innerHTML = "➕ Launch Slurm MCP Server";
+              mcpLaunchBtn.title = "";
+              mcpLaunchBtn.onclick = () => openLaunchModal();
+            }
+          }
         } else if (statusData.status === "error") {
           showToast(`⚠️ Cluster status warning: ${statusData.error || "Unknown"}`);
         }
@@ -1345,7 +1420,17 @@
       const myMcpCount = allServers.filter(
         s => s.owner === currentUser && ["RUNNING", "PENDING"].includes(s.state)
       ).length;
-      const myRegularCount = allRegularJobs.filter(
+
+      // Extract all registered MCP job IDs so regular jobs count NEVER includes MCP server jobs
+      const mcpJobIds = new Set(
+        allServers.map(s => Number(s.job_id || s.slurm_job_id)).filter(id => id > 0)
+      );
+
+      const myRegularJobs = allRegularJobs.filter(
+        j => !mcpJobIds.has(Number(j.job_id))
+      );
+
+      const myRegularCount = myRegularJobs.filter(
         j => j.is_active || ["RUNNING", "PENDING"].includes((j.state || "").toUpperCase())
       ).length;
 
@@ -1422,16 +1507,19 @@
                 <span class="detail-val" style="font-size: 0.75rem; word-break: break-all;">${escapeHtml(s.job_name)}</span>
               </div>
               ` : ''}
+              ${activeFilter === "mine" ? `
               <div class="detail-item">
                 <span class="detail-label">Assigned Node</span>
-                <span class="detail-val">${escapeHtml(s.node || "Pending")}</span>
+                <span class="detail-val" style="font-family: 'JetBrains Mono', monospace;">${escapeHtml(s.node || "Pending")}</span>
               </div>
               <div class="detail-item">
                 <span class="detail-label">Assigned Port</span>
-                <span class="detail-val">${s.port || "Pending"}</span>
+                <span class="detail-val" style="font-family: 'JetBrains Mono', monospace;">${s.port || "Pending"}</span>
               </div>
+              ` : ''}
             </div>
 
+            ${activeFilter === "mine" ? `
             <div class="server-card-actions">
               <button class="btn btn-secondary btn-sm" onclick="viewTools('${escapeHtml(s.mcp_name)}')" ${!isRunning ? 'disabled title="Tools available when running"' : ''}>
                 🛠️ View Tools
@@ -1448,6 +1536,7 @@
                 </button>
               ` : ''}
             </div>
+            ` : ''}
           </div>
         `;
       }).join("");
@@ -2376,10 +2465,16 @@ python3 /path/to/my_mcp_server.py
     }
 
     function renderRegularJobs(jobs) {
-      const tbody = document.getElementById("regular-jobs-tbody");
-      document.getElementById("regular-job-count-label").textContent = `${jobs.length} jobs found`;
+      // Exclude MCP server jobs from regular jobs view
+      const mcpJobIds = new Set(
+        allServers.map(s => Number(s.job_id || s.slurm_job_id)).filter(id => id > 0)
+      );
+      const filteredJobs = (jobs || []).filter(j => !mcpJobIds.has(Number(j.job_id)));
 
-      if (!jobs || jobs.length === 0) {
+      const tbody = document.getElementById("regular-jobs-tbody");
+      document.getElementById("regular-job-count-label").textContent = `${filteredJobs.length} jobs found`;
+
+      if (!filteredJobs || filteredJobs.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="7" style="padding: 32px; text-align: center; color: var(--text-muted);">
@@ -2392,7 +2487,7 @@ python3 /path/to/my_mcp_server.py
         return;
       }
 
-      tbody.innerHTML = jobs.map(j => {
+      tbody.innerHTML = filteredJobs.map(j => {
         const state = (j.state || "UNKNOWN").toUpperCase();
         const isCancellable = ["PENDING", "RUNNING", "SUSPENDED", "CONFIGURING"].includes(state);
 

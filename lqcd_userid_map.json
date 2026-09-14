@@ -1,6 +1,18 @@
 {
-    "chen@jlab.org": "chen",
-    "edwards@jlab.org": "edwards",
-    "jkarpie@jlab.org": "jkarpie",
-    "chunyu@jlab.org": "chunyu"
+    "chen@jlab.org": {
+        "account": "chen",
+        "mcp": true
+    },
+    "edwards@jlab.org": {
+        "account": "edwards",
+        "mcp": true
+    },
+    "jkarpie@jlab.org": {
+        "account": "jkarpie",
+        "mcp": true
+    },
+    "chunyu@jlab.org": {
+        "account": "chunyu",
+        "mcp": true
+    }
 }

@@ -1,4 +1,10 @@
 {
-  "jiechenajlab": "chen",
-  "grokqcd": "edwards"
+  "jiechenajlab": {
+    "account": "chen",
+    "mcp": true
+  },
+  "grokqcd": {
+    "account": "edwards",
+    "mcp": true
+  }
 }

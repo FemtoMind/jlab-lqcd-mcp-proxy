@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import pwd
+import subprocess
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -20,6 +21,43 @@ dashboard_router = APIRouter(prefix="/jlab/lqcd/mcp/dashboard", tags=["Slurm MCP
 STATIC_INDEX_HTML_PATH = os.path.join(
     os.path.dirname(__file__), "static", "slurm_dashboard", "index.html"
 )
+
+
+async def get_user_slurm_project_details(user: str) -> dict[str, Any]:
+    """Retrieve Slurm default account and associated project accounts for a user."""
+    default_account = ""
+    accounts = []
+    try:
+        cmd_user = ["sacctmgr", "show", "user", user, "format=DefaultAccount", "-P", "-n"]
+        proc = subprocess.Popen(cmd_user, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc.wait()
+        if proc.stdout:
+            out = proc.stdout.read().strip()
+            if out:
+                default_account = out.split("\n")[0].strip()
+    except Exception as e:
+        lqcd_logger.debug(f"Error checking default Slurm account for {user}: {e}")
+
+    try:
+        cmd_assoc = ["sacctmgr", "show", "associations", "where", f"user={user}", "format=Account", "-P", "-n"]
+        proc = subprocess.Popen(cmd_assoc, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc.wait()
+        if proc.stdout:
+            for line in proc.stdout:
+                ac = line.strip()
+                if ac and ac not in accounts:
+                    accounts.append(ac)
+    except Exception as e:
+        lqcd_logger.debug(f"Error checking Slurm project associations for {user}: {e}")
+
+    if not default_account and accounts:
+        default_account = accounts[0]
+
+    return {
+        "user": user,
+        "default_account": default_account,
+        "accounts": accounts,
+    }
 
 
 # Request Models
@@ -99,16 +137,28 @@ async def get_dashboard_status(
                     "time_limit": getattr(p, "wall_time_limit", ""),
                 })
 
-        # Get accounts for this user
-        accounts = await lqcd_slurm_manager.get_slurm_accounts(current_user) or []
+        # Get accounts & project info for this user
+        from lqcd_oidc_auth import can_user_launch_mcp
+        allow_mcp = can_user_launch_mcp(current_user)
+        project_details = await get_user_slurm_project_details(current_user)
+        accounts = project_details.get("accounts", [])
+        default_account = project_details.get("default_account", "")
 
         return {
             "status": "success",
             "user": current_user,
+            "allow_mcp": allow_mcp,
             "idle_nodes": idle_nodes,
             "cluster_name": "Jefferson Lab LQCD Cluster",
             "partitions": partitions_data,
             "accounts": accounts,
+            "default_account": default_account,
+            "project_info": {
+                "user": current_user,
+                "default_account": default_account,
+                "accounts": accounts,
+                "allow_mcp": allow_mcp,
+            },
         }
     except Exception as e:
         lqcd_logger.error(f"Error fetching dashboard status: {e}")
@@ -385,6 +435,17 @@ async def launch_dashboard_server(
     """Submit a Slurm batch job to launch a new MCP server using a local script file or script content."""
     try:
         from slurm_mcp_server import lqcd_slurm_manager, lqcd_mcp_servers
+        from lqcd_oidc_auth import can_user_launch_mcp
+
+        # Check MCP launch permission
+        if not can_user_launch_mcp(current_user):
+            lqcd_logger.warning(
+                f"SECURITY ALERT: Dashboard user '{current_user}' attempted unauthorized MCP server launch."
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission Denied: User '{current_user}' is not authorized to launch interactive MCP servers on cluster nodes. Please submit regular Slurm batch jobs instead.",
+            )
 
         mcp_name = payload.mcp_name.strip()
         if not mcp_name:
@@ -662,15 +723,23 @@ async def get_mcp_client_config(
 async def list_dashboard_regular_jobs(
     current_user: str = Depends(get_dashboard_user),
 ) -> dict[str, Any]:
-    """List regular Slurm batch jobs for the authenticated user."""
+    """List regular Slurm batch jobs for the authenticated user (excluding MCP server jobs)."""
     try:
-        from slurm_mcp_server import lqcd_slurm_manager
+        from slurm_mcp_server import lqcd_slurm_manager, lqcd_mcp_servers
 
         jobs = await lqcd_slurm_manager.get_user_regular_jobs(current_user)
+
+        # Exclude active and registered MCP server jobs
+        mcp_servers = await lqcd_mcp_servers.get_all_slurm_mcp_servers()
+        mcp_job_ids = {
+            s.slurm_job_id for s in mcp_servers if s.slurm_job_id and s.slurm_job_id > 0
+        }
+        filtered_jobs = [j for j in jobs if j.get("job_id") not in mcp_job_ids]
+
         return {
             "status": "success",
             "user": current_user,
-            "jobs": jobs,
+            "jobs": filtered_jobs,
         }
     except Exception as e:
         lqcd_logger.error(f"Error fetching regular Slurm jobs: {e}")
