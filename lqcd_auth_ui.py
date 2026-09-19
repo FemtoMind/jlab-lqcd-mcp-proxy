@@ -2,6 +2,7 @@
 import asyncio
 import argparse
 import os
+import sys
 import json
 import httpx
 import time
@@ -565,7 +566,7 @@ def update_mcp_json(
             console.print(f"[bold red]Failed to write to {path}:[/bold red] {e}")
 
 
-async def verify_local_account(proxy_url: str, token: str, insecure: bool):
+async def verify_local_account(proxy_url: str, token: str, insecure: bool) -> bool:
     console.print(
         f"\n[bold blue]Verifying local account mapping on proxy...[/bold blue]"
     )
@@ -612,12 +613,13 @@ async def verify_local_account(proxy_url: str, token: str, insecure: bool):
                 user_info = result.data
 
             if isinstance(user_info, dict):
-                user_id = user_info.get("user_id", "unknown")
-                user_account = user_info.get("user_account", "unknown")
-                if user_account == "unknown":
+                user_id = user_info.get("user_id") or "unknown"
+                user_account = user_info.get("user_account")
+                if not user_account or user_account == "unknown":
                     console.print(
-                        f"[bold red]User account mapping not found. Your identity '{user_id}' has no local slurm account.[/bold red]"
+                        f"[bold red]❌ User account mapping failed: Your identity '{user_id}' has no associated local Slurm account.[/bold red]"
                     )
+                    return False
                 else:
                     console.print(
                         f"[bold green]✅ Success! Mapped to local JLab user account: [white]{user_account}[/white][/bold green]"
@@ -625,15 +627,18 @@ async def verify_local_account(proxy_url: str, token: str, insecure: bool):
                     console.print(
                         f"You're all set to launch and manage interactive Slurm tasks!"
                     )
+                    return True
             else:
                 console.print(
-                    f"[bold yellow]Received unexpected mapping response format: {result}[/bold yellow]"
+                    f"[bold red]❌ Received unexpected mapping response format from proxy: {result}[/bold red]"
                 )
+                return False
 
     except Exception as e:
         console.print(
-            f"[bold red]Warning: Failed to fetch local user account mapping:[/bold red] {e}"
+            f"[bold red]❌ Failed to verify local user account mapping:[/bold red] {e}"
         )
+        return False
 
 
 async def main():
@@ -765,8 +770,15 @@ async def main():
 
         console.print(f"\n[bold magenta]Your authentication token:[/bold magenta] {token}\n")
         
+    # Verify local account mapping before updating any MCP config
+    is_valid_account = await verify_local_account(proxy_url, token, args.insecure)
+    if not is_valid_account:
+        console.print(
+            "\n[bold red]❌ Authentication aborted: Local account mapping could not be verified. MCP configuration was NOT updated.[/bold red]\n"
+        )
+        sys.exit(1)
+
     update_mcp_json(proxy_url, token, args.transport, args.extra_config)
-    await verify_local_account(proxy_url, token, args.insecure)
 
 
 
