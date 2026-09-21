@@ -17,6 +17,11 @@ import subprocess
 import asyncio
 import json
 import os
+from dotenv import load_dotenv
+
+# load .server_env file
+load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=False)
+
 import uvicorn
 import pwd
 from typing import Optional, Any
@@ -56,11 +61,81 @@ else:
 class SlurmMcpServers:
     """Manage slurm backend servers."""
 
-    def __init__(self):
+    def __init__(self, store_file: str | None = None):
         """Initialize the slurm backend server manager."""
         self.slurm_mcp_servers: dict[str, cdata.SlurmMcpServer] = {}
         self.slurm_mcp_servers_by_jobid: dict[int, cdata.SlurmMcpServer] = {}
         self._lock = asyncio.Lock()
+        self.load_from_store(store_file)
+
+    def load_from_store(self, file_path: str | None = None) -> bool:
+        """Load slurm backend servers from the storage file."""
+        if file_path is None:
+            file_path = os.getenv("LQCDMCP_MCP_SERVERS_STORE", None)
+        if not file_path:
+            return False
+        if not os.path.exists(file_path):
+            lqcd_logger.info(
+                f"Slurm MCP servers store file '{file_path}' does not exist yet."
+            )
+            return False
+
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+
+            count = 0
+            if isinstance(data, list):
+                for item in data:
+                    srv = cdata.SlurmMcpServer(**item)
+                    self.slurm_mcp_servers[srv.mcp_name] = srv
+                    if srv.slurm_job_id != -1:
+                        self.slurm_mcp_servers_by_jobid[srv.slurm_job_id] = srv
+                    count += 1
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    if isinstance(v, dict):
+                        srv = cdata.SlurmMcpServer(**v)
+                        self.slurm_mcp_servers[srv.mcp_name] = srv
+                        if srv.slurm_job_id != -1:
+                            self.slurm_mcp_servers_by_jobid[srv.slurm_job_id] = srv
+                        count += 1
+
+            lqcd_logger.info(
+                f"Loaded {count} slurm MCP server(s) from store '{file_path}'."
+            )
+            return True
+        except Exception as e:
+            lqcd_logger.error(f"Error loading slurm MCP servers from '{file_path}': {e}")
+            return False
+
+    def save_to_store(self, file_path: str | None = None) -> bool:
+        """Save slurm backend servers to the storage file."""
+        if file_path is None:
+            file_path = os.getenv("LQCDMCP_MCP_SERVERS_STORE", None)
+        if not file_path:
+            return False
+
+        try:
+            parent_dir = os.path.dirname(file_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+
+            data = {
+                name: server.model_dump()
+                for name, server in self.slurm_mcp_servers.items()
+            }
+            tmp_file = f"{file_path}.tmp"
+            with open(tmp_file, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_file, file_path)
+            lqcd_logger.debug(
+                f"Saved {len(data)} slurm MCP server(s) to store '{file_path}'."
+            )
+            return True
+        except Exception as e:
+            lqcd_logger.error(f"Error saving slurm MCP servers to '{file_path}': {e}")
+            return False
 
     async def add_slurm_mcp_server(
         self, slurm_mcp_server: cdata.SlurmMcpServer
@@ -97,6 +172,7 @@ class SlurmMcpServers:
                     self.slurm_mcp_servers_by_jobid
                 )
             )
+            self.save_to_store()
 
         return True
 
@@ -115,6 +191,7 @@ class SlurmMcpServers:
             self.slurm_mcp_servers_by_jobid[slurm_mcp_server.slurm_job_id] = (
                 slurm_mcp_server
             )
+            self.save_to_store()
         return True
 
     async def is_slurm_mcp_server_valid(self, mcp_name: str) -> bool:
@@ -150,7 +227,9 @@ class SlurmMcpServers:
                 jobid = self.slurm_mcp_servers[mcp_name].slurm_job_id
                 del self.slurm_mcp_servers[mcp_name]
                 # remove the slurm mcp server by job id
-                del self.slurm_mcp_servers_by_jobid[jobid]
+                if jobid in self.slurm_mcp_servers_by_jobid:
+                    del self.slurm_mcp_servers_by_jobid[jobid]
+                self.save_to_store()
             return True
         return False
 
@@ -161,7 +240,9 @@ class SlurmMcpServers:
                 mcp_name = self.slurm_mcp_servers_by_jobid[jobid].mcp_name
                 del self.slurm_mcp_servers_by_jobid[jobid]
                 # remove the slurm mcp server by server id
-                del self.slurm_mcp_servers[mcp_name]
+                if mcp_name in self.slurm_mcp_servers:
+                    del self.slurm_mcp_servers[mcp_name]
+                self.save_to_store()
             return True
         return False
 
@@ -475,6 +556,9 @@ class SlurmSpawner:
             await self.slurm_mcp_servers.remove_slurm_mcp_server_by_jobid(
                 server.slurm_job_id
             )
+
+        # Update persistent storage with latest server states
+        self.slurm_mcp_servers.save_to_store()
 
         return job_states
 
