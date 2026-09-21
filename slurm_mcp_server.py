@@ -758,8 +758,15 @@ $cmd
         lqcd_logger.info("User {} and gid {} submitting slurm job".format(user, gid))
         # submit job using --job-name to override the job name in the script
 
-        # assume user home directory is /home/user
-        home_dir = "/home/{}".format(user)
+        # get user home directory dynamically
+        try:
+            user_pw = pwd.getpwnam(user)
+            home_dir = user_pw.pw_dir
+        except Exception:
+            home_dir = f"/home/{user}"
+
+        # Fallback to /tmp if home_dir is not accessible on this node
+        working_dir = home_dir if os.path.isdir(home_dir) else "/tmp"
 
         if need_privilege:
             # build the command list
@@ -790,6 +797,7 @@ $cmd
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                cwd=working_dir,
             )
             output = pipe.communicate(input=job_script.encode())[0].strip()
             output = output.decode()
