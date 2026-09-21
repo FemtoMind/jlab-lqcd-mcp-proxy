@@ -121,6 +121,12 @@ async def scan_slurm_jobs():
     lqcd_logger.info(
         "Starting periodic background task (every 60 seconds) to scan slurm jobs."
     )
+    # Run initial scan on startup to verify any live jobs loaded from store
+    try:
+        await lqcd_slurm_manager.scan_slurm_jobs()
+    except Exception as e:
+        lqcd_logger.error(f"Error in initial slurm job scanning: {e}")
+
     while True:
         try:
             await asyncio.sleep(60)
@@ -165,6 +171,9 @@ async def proxy_app_lifespan(app):
 
     # Setup MCP servers
     await setup_mcp_servers()
+
+    # Load persistent slurm mcp servers from storage file
+    lqcd_mcp_servers.load_from_store()
 
     # Log all routes to diagnose routing precedence
     lqcd_logger.info("Registered routes:")
