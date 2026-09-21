@@ -9,6 +9,8 @@ LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_o
 #LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map.json
 #LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_github.json
 LQCDMCP_USERID_MAP_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_userid_map_globus.json
+# Storage file for live launched MCP servers
+LQCDMCP_MCP_SERVERS_STORE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_mcp_servers_store.json
 # Integrate with IRI
 IRI_INTEGRATION=true
 IRI_DIR=/home/chen/amsc/iri-facility-api-python
