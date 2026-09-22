@@ -249,26 +249,67 @@ def validate_authorized_token(token: str):
         return False, None
 
 
+def map_user_info_to_account(user_info: dict) -> str | None:
+    """
+    Maps user identity info (from OIDC UserInfo or Globus introspection) to a local Linux account.
+    Checks primary identity fields as well as all linked Globus identities and session authentications.
+    """
+    candidate_keys: list[str] = []
+
+    def add_candidate(val: Any) -> None:
+        if isinstance(val, str) and val.strip() and val.strip() not in candidate_keys:
+            candidate_keys.append(val.strip())
+
+    # 1. Primary candidate keys from user_info
+    for key in ("username", "email", "preferred_username", "sub", "login"):
+        add_candidate(user_info.get(key))
+
+    # 2. Add all linked identities and session authentications from Globus introspection
+    introspect = user_info.get("globus_introspect") if "globus_introspect" in user_info else user_info
+    if isinstance(introspect, dict):
+        session_info = introspect.get("session_info")
+        if isinstance(session_info, dict):
+            authentications = session_info.get("authentications")
+            if isinstance(authentications, dict):
+                for auth_detail in authentications.values():
+                    if isinstance(auth_detail, dict):
+                        for key in ("username", "email", "sub"):
+                            add_candidate(auth_detail.get(key))
+
+        identity_set_detail = introspect.get("identity_set_detail")
+        if isinstance(identity_set_detail, list):
+            for item in identity_set_detail:
+                if isinstance(item, dict):
+                    for key in ("username", "email", "sub"):
+                        add_candidate(item.get(key))
+
+    # 3. Check each candidate key against the mapping file
+    for key in candidate_keys:
+        lqcd_logger.debug(f"Checking candidate key in user_info: {key}")
+        account = get_local_account(key)
+        if account:
+            lqcd_logger.info(f"Mapped token identity '{key}' to local account '{account}'.")
+            return account
+        else:
+            lqcd_logger.debug(f"No local account found for candidate key: {key}")
+
+    lqcd_logger.warning(
+        f"Token is valid but no candidate identity matched user mapping. Checked: {candidate_keys}"
+    )
+    return None
+
+
 def validate_and_map_user_token(token: str) -> str | None:
     """
     Validates token via Globus RS Introspection or OIDC UserInfo,
     and returns the mapped local Linux account username.
+    Checks primary identity as well as any linked Globus identities.
     """
     valid, user_info = validate_authorized_token(token)
-    if not valid or not user_info:
+    if not valid or not isinstance(user_info, dict):
         return None
 
-    user_identity = (
-        user_info.get("username")
-        or user_info.get("email")
-        or user_info.get("preferred_username")
-        or user_info.get("sub")
-        or user_info.get("login")
-    )
-    if not user_identity:
-        return None
-
-    return get_local_account(user_identity)
+    return map_user_info_to_account(user_info)
 
 
 

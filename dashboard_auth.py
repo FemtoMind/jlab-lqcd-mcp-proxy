@@ -122,34 +122,12 @@ async def get_dashboard_user(
 
     # Also check if it's a valid OIDC bearer token directly (e.g. from an API client)
     try:
-        from lqcd_oidc_auth import validate_authorized_token, get_local_account
+        from lqcd_oidc_auth import validate_and_map_user_token
 
-        valid, user_info = validate_authorized_token(token)
-        if valid and user_info:
-            user_login = (
-                user_info.get("email")
-                or user_info.get("preferred_username")
-                or user_info.get("sub")
-                or user_info.get("login")
-            )
-
-            if user_login is None:
-                raise HTTPException(
-                    status_code=401,
-                    detail="OIDC token did not contain any usable user identifier.",
-                )
-
-            local_account = get_local_account(user_login)
-            if local_account:
-                lqcd_logger.info(f"User '{user_login}' found in local accounts.")
-                return local_account
-
-            lqcd_logger.error(f"No local account found for OIDC user '{user_login}'.")
-            raise HTTPException(
-                status_code=401,
-                detail=f"User '{user_login}' is authenticated but does not have an account on this system.",
-            )
-
+        local_account = validate_and_map_user_token(token)
+        if local_account:
+            lqcd_logger.info(f"OIDC token mapped to local account '{local_account}'.")
+            return local_account
     except Exception as e:
         lqcd_logger.debug(f"Direct OIDC validation error for dashboard: {e}")
 

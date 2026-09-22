@@ -38,9 +38,7 @@ from fastmcp.server.dependencies import get_context
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
 # import token validation helper
-from lqcd_oidc_auth import validate_authorized_token
-from lqcd_oidc_auth import get_local_account
-from lqcd_oidc_auth import can_user_launch_mcp
+from lqcd_oidc_auth import validate_authorized_token, get_local_account, can_user_launch_mcp, map_user_info_to_account
 
 # Get process owner
 from server_util import get_process_owner
@@ -1107,9 +1105,8 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
             try:
                 # Reuse our existing validation helper
                 valid, user_info = validate_authorized_token(token)
-                if valid and user_info is not None:
+                if valid and isinstance(user_info, dict):
                     # OIDC provider may return 'sub', 'email', 'eppn', etc.
-                    # The debug output shows 'sub' is present, but 'email' is missing despite scope.
                     # We prioritize friendly names if available, but fallback to 'sub'.
                     user_login = (
                         user_info.get("email")
@@ -1118,8 +1115,9 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
                         or user_info.get("login")
                         or "unknown"
                     )
+                    local_account = map_user_info_to_account(user_info)
                     lqcd_logger.debug(
-                        f"DEBUG: Token validation successful. ID: {user_login}, Info: {user_info}"
+                        f"DEBUG: Token validation successful. ID: {user_login}, Mapped Account: {local_account}, Info: {user_info}"
                     )
                 else:
                     lqcd_logger.debug(
@@ -1129,7 +1127,8 @@ async def validate_user(username: str, ctx: ServerContext) -> dict:
                 lqcd_logger.debug(f"DEBUG: Token validation failed: {e}")
 
     # Convert user identity to local account and check permissions
-    local_account = get_local_account(user_login)
+    if local_account is None:
+        local_account = get_local_account(user_login)
     allow_mcp = can_user_launch_mcp(user_login) or (
         can_user_launch_mcp(local_account) if local_account else False
     )
