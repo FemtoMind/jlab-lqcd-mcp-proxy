@@ -724,6 +724,9 @@
         <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="manualRefresh()" title="Click to refresh immediately and resume auto-refresh">
           🔄 Refresh (<span id="refresh-timer">30s</span>)
         </button>
+        <button class="btn btn-secondary btn-sm" id="btn-export-mcp" onclick="openExportMcpModal()" title="Export MCP Client Configuration (VS Code, Antigravity, Cursor, Claude)" style="display: none;">
+          📦 Export MCP Config
+        </button>
         <button class="btn btn-primary btn-sm" id="btn-signin" onclick="openAuthModal()" style="display: none;">
           🔑 Sign In
         </button>
@@ -803,15 +806,15 @@
           </div>
           <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;" id="proj-accounts-list">
             <span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span>
-            <span class="badge" style="background: var(--bg-card); color: var(--text-dim); font-size: 0.75rem;">Loading...</span>
+            <span class="badge" style="background: var(--bg-card); color: var(--text-dim); font-size: 0.75rem;">Sign in required</span>
           </div>
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
         <div style="text-align: right;">
           <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">MCP Launch Status</div>
-          <div id="proj-mcp-status" style="font-size: 0.85rem; font-weight: 600; color: #10b981; margin-top: 2px;">
-            Checking...
+          <div id="proj-mcp-status" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-top: 2px;">
+            <span style="color: var(--text-muted); font-weight: 500;">🔒 Sign in required</span>
           </div>
         </div>
       </div>
@@ -1139,13 +1142,86 @@
         </div>
 
         <!-- Current Status & Sign Out -->
-        <div id="auth-current-status" style="display: none; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <div id="auth-current-status" style="display: none; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <span style="font-size: 0.85rem; color: var(--text-muted);">Current User: <strong id="auth-modal-user" style="color: var(--text-main);"></strong></span>
-          <button class="btn btn-danger btn-sm" onclick="signOut()">Sign Out</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="openExportMcpModal()">📦 Export MCP Config</button>
+            <button class="btn btn-danger btn-sm" onclick="signOut()">Sign Out</button>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-auth')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Export MCP Configuration -->
+  <div class="modal-overlay" id="modal-export-mcp">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>📦 Export MCP Client Configuration</h2>
+        <button class="modal-close" onclick="closeModal('modal-export-mcp')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0;">
+          Use this configuration to connect your AI Assistant, IDE, or Agent (VS Code, Antigravity, Cursor, Claude Desktop) to the Jefferson Lab LQCD MCP Proxy.
+        </p>
+
+        <!-- Transport & Client Options -->
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; background: var(--bg-card); padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Client Format</label>
+            <select id="export-client-select" class="form-control" onchange="renderMcpExportConfig()">
+              <option value="vscode">VS Code (mcp.json) - [servers: streamable_http]</option>
+              <option value="antigravity">Antigravity / Gemini (mcp_config.json) - [mcpServers: serverUrl]</option>
+              <option value="cursor">Cursor (.cursor/mcp.json) - [mcpServers: url]</option>
+              <option value="claude">Claude Desktop (claude_desktop_config.json) - [npx mcp-remote]</option>
+              <option value="chatgpt">ChatGPT (Custom GPT Actions / OpenAPI 3.1)</option>
+              <option value="codex">OpenAI Codex / Python SDK Client</option>
+              <option value="env">Shell Environment Variables (cURL / SDK)</option>
+            </select>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px; min-width: 180px;">
+            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Transport Protocol</label>
+            <select id="export-transport-select" class="form-control" onchange="renderMcpExportConfig()">
+              <option value="http">Streamable HTTP (/jlab) - Default</option>
+              <option value="sse">Server-Sent Events (/jlab_sse/sse)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Target File Path Guidance -->
+        <div id="export-path-hint" style="font-size: 0.82rem; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span>📁 Target file location:</span>
+          <code id="export-target-path" style="color: #93c5fd; background: rgba(59, 130, 246, 0.12); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace;">~/.config/Code/User/mcp.json</code>
+        </div>
+
+        <!-- Code Box -->
+        <div style="position: relative;">
+          <pre id="export-config-preview" style="background: var(--bg-base); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: #a7f3d0; overflow-x: auto; max-height: 280px; margin: 0; line-height: 1.45;"></pre>
+        </div>
+
+        <!-- Actions -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 0.82rem; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" id="export-mask-token" onchange="renderMcpExportConfig()" />
+              <span>Mask Token for Sharing</span>
+            </label>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="downloadMcpConfigFile()">
+              💾 Download File
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="copyMcpExportConfig()">
+              📋 Copy Configuration
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-export-mcp')">Close</button>
       </div>
     </div>
   </div>
@@ -1282,7 +1358,7 @@
           headers: getAuthHeaders()
         });
 
-        if (statusRes.status === 401) {
+        if (statusRes.status === 401 || statusRes.status === 403) {
           if (refreshInterval) {
             clearInterval(refreshInterval);
             refreshInterval = null;
@@ -1290,19 +1366,78 @@
           const timerEl = document.getElementById("refresh-timer");
           if (timerEl) timerEl.textContent = "Paused";
           document.getElementById("btn-signin").style.display = "inline-flex";
+          document.getElementById("btn-export-mcp").style.display = "none";
           document.getElementById("user-badge").style.display = "none";
-          showAlert(`
-            <span>⚠️ <strong>Authentication required.</strong> Sign in with Globus or paste your access token to view cluster resources.</span>
-            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
-              <button class="btn btn-sm btn-primary" onclick="openAuthModal()">🔑 Sign In with Globus / Token</button>
-            </div>
-          `, true);
+
+          let errorDetail = "";
+          try {
+            const errData = await statusRes.json();
+            errorDetail = errData.detail || "";
+          } catch (e) {}
+
+          const defAccEl = document.getElementById("proj-default-account");
+          if (defAccEl) defAccEl.textContent = "--";
+          const accListEl = document.getElementById("proj-accounts-list");
+          const mcpStatusEl = document.getElementById("proj-mcp-status");
+
+          // Reset cluster stats to --
+          document.getElementById("stat-idle-nodes").textContent = "--";
+          document.getElementById("stat-running-servers").textContent = "--";
+          document.getElementById("stat-partitions").textContent = "--";
+          const mcpEl = document.getElementById("stat-my-mcp-jobs");
+          if (mcpEl) mcpEl.textContent = "--";
+          const regEl = document.getElementById("stat-my-regular-jobs");
+          if (regEl) regEl.textContent = "--";
+
+          allServers = [];
+          allRegularJobs = [];
+          renderServers();
+          if (currentMainTab === "regular") {
+            renderRegularJobs([]);
+          }
+
+          if (statusRes.status === 403) {
+            currentUser = "";
+            document.getElementById("user-name").textContent = "No Local Account";
+            if (accListEl) {
+              accListEl.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span> <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; font-size: 0.75rem; border: 1px solid rgba(239, 68, 68, 0.3);">No local account</span>`;
+            }
+            if (mcpStatusEl) {
+              mcpStatusEl.innerHTML = `<span style="color: #ef4444; display: flex; align-items: center; gap: 4px;">🚫 No local account</span>`;
+            }
+            showAlert(`
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <span style="font-size: 0.95rem; font-weight: 600; color: #f87171;">🚫 Access Restricted: You do not have a local account</span>
+                <span style="font-size: 0.85rem; color: var(--text-dim); line-height: 1.4;">${escapeHtml(errorDetail || "Your Globus identity authenticated successfully, but is not mapped to any local cluster account on this system. Please contact the administrator.")}</span>
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+                <button class="btn btn-sm btn-primary" onclick="openAuthModal()">🔑 Switch Account / Re-authenticate</button>
+              </div>
+            `, true);
+            showToast("🚫 " + (errorDetail || "You do not have a local account on this cluster."));
+          } else {
+            currentUser = "";
+            document.getElementById("user-name").textContent = "Not Authenticated";
+            if (accListEl) {
+              accListEl.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span> <span class="badge" style="background: var(--bg-card); color: var(--text-dim); font-size: 0.75rem;">Sign in required</span>`;
+            }
+            if (mcpStatusEl) {
+              mcpStatusEl.innerHTML = `<span style="color: var(--text-muted); font-weight: 500;">🔒 Sign in required</span>`;
+            }
+            showAlert(`
+              <span>⚠️ <strong>Authentication required.</strong> Sign in with Globus or paste your access token to view cluster resources.</span>
+              <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+                <button class="btn btn-sm btn-primary" onclick="openAuthModal()">🔑 Sign In with Globus / Token</button>
+              </div>
+            `, true);
+          }
           return;
         }
 
         // Hide alert if successful
         hideAlert();
         document.getElementById("btn-signin").style.display = "none";
+        document.getElementById("btn-export-mcp").style.display = "inline-flex";
         document.getElementById("user-badge").style.display = "flex";
 
         const statusData = await statusRes.json();
@@ -2159,7 +2294,6 @@ python3 /path/to/my_mcp_server.py
       authToken = token;
       sessionStorage.setItem("mcp_dashboard_token", token);
       closeModal("modal-auth");
-      showToast("✅ Successfully Authenticated!");
       startAutoRefresh();
       fetchDashboardData();
     }
@@ -2173,8 +2307,320 @@ python3 /path/to/my_mcp_server.py
       document.getElementById("user-avatar").textContent = "?";
       document.getElementById("btn-signin").style.display = "inline-flex";
       document.getElementById("user-badge").style.display = "none";
+      const exportBtn = document.getElementById("btn-export-mcp");
+      if (exportBtn) exportBtn.style.display = "none";
+
+      const defAccEl = document.getElementById("proj-default-account");
+      if (defAccEl) defAccEl.textContent = "--";
+      const accListEl = document.getElementById("proj-accounts-list");
+      if (accListEl) accListEl.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Allocated Projects:</span> <span class="badge" style="background: var(--bg-card); color: var(--text-dim); font-size: 0.75rem;">Sign in required</span>`;
+      const mcpStatusEl = document.getElementById("proj-mcp-status");
+      if (mcpStatusEl) mcpStatusEl.innerHTML = `<span style="color: var(--text-muted); font-weight: 500;">🔒 Sign in required</span>`;
+
+      allServers = [];
+      allRegularJobs = [];
+      renderServers();
+      if (currentMainTab === "regular") {
+        renderRegularJobs([]);
+      }
+      updateServerStats();
+
       showToast("Signed out.");
       fetchDashboardData();
+    }
+
+    // Export MCP Config Functions
+    function openExportMcpModal() {
+      renderMcpExportConfig();
+      openModal("modal-export-mcp");
+    }
+
+    function getMcpEndpointUrl(transport) {
+      const origin = (window.location.origin && window.location.origin !== "null")
+        ? window.location.origin
+        : "http://localhost:8123";
+      if (transport === "sse") {
+        return `${origin}/jlab_sse/sse`;
+      }
+      return `${origin}/jlab`;
+    }
+
+    function renderMcpExportConfig() {
+      const clientSelect = document.getElementById("export-client-select");
+      const transportSelect = document.getElementById("export-transport-select");
+      const maskCheckbox = document.getElementById("export-mask-token");
+      const pathHintEl = document.getElementById("export-target-path");
+      const previewEl = document.getElementById("export-config-preview");
+
+      if (!clientSelect || !transportSelect || !previewEl) return;
+
+      const client = clientSelect.value;
+      const transport = transportSelect.value;
+      const isMasked = maskCheckbox ? maskCheckbox.checked : false;
+      const token = (isMasked || !authToken) ? "<YOUR_ACCESS_TOKEN>" : authToken;
+      const url = getMcpEndpointUrl(transport);
+
+      let configText = "";
+      let pathHint = "";
+
+      switch (client) {
+        case "vscode":
+          pathHint = "~/.config/Code/User/mcp.json (Linux) or ~/Library/Application Support/Code/User/mcp.json (macOS)";
+          const vscodeConfig = {
+            "servers": {
+              "jlab-lqcd-mcp-proxy": {
+                "type": transport === "sse" ? "sse" : "streamable_http",
+                "url": url,
+                "headers": {
+                  "Authorization": `Bearer ${token}`
+                }
+              }
+            }
+          };
+          configText = JSON.stringify(vscodeConfig, null, 2);
+          break;
+
+        case "antigravity":
+          pathHint = "~/.gemini/config/mcp_config.json or ~/.gemini/antigravity/mcp_config.json";
+          const agyConfig = {
+            "mcpServers": {
+              "lqcd-mcp-proxy": {
+                "serverUrl": url,
+                "headers": {
+                  "Authorization": `Bearer ${token}`,
+                  "Content-Type": "application/json"
+                }
+              }
+            }
+          };
+          configText = JSON.stringify(agyConfig, null, 2);
+          break;
+
+        case "cursor":
+          pathHint = "~/.cursor/mcp.json or .cursor/mcp.json (in workspace)";
+          const cursorConfig = {
+            "mcpServers": {
+              "jlab-lqcd-mcp-proxy": {
+                "url": url,
+                "headers": {
+                  "Authorization": `Bearer ${token}`
+                }
+              }
+            }
+          };
+          configText = JSON.stringify(cursorConfig, null, 2);
+          break;
+
+        case "claude":
+          pathHint = "claude_desktop_config.json (~/Library/Application Support/Claude/ or ~/.config/Claude/)";
+          const claudeConfig = {
+            "mcpServers": {
+              "jlab-lqcd-mcp-proxy": {
+                "command": "npx",
+                "args": [
+                  "-y",
+                  "mcp-remote",
+                  url,
+                  "--header",
+                  `Authorization: Bearer ${token}`
+                ]
+              }
+            }
+          };
+          configText = JSON.stringify(claudeConfig, null, 2);
+          break;
+
+        case "chatgpt":
+          pathHint = "ChatGPT Custom GPT -> Configure -> Create Action -> Paste schema (Auth: Bearer)";
+          const originUrl = (window.location.origin && window.location.origin !== "null")
+            ? window.location.origin
+            : "http://localhost:8123";
+          const chatgptConfig = {
+            "openapi": "3.1.0",
+            "info": {
+              "title": "Jefferson Lab LQCD MCP Proxy Service",
+              "description": "API for interacting with JLab LQCD Slurm compute resources and MCP backend servers.",
+              "version": "1.0.0"
+            },
+            "servers": [
+              {
+                "url": originUrl
+              }
+            ],
+            "paths": {
+              "/jlab": {
+                "post": {
+                  "summary": "Call MCP Proxy RPC",
+                  "description": "Send JSON-RPC / MCP requests to JLab LQCD proxy server",
+                  "operationId": "callMcpProxy",
+                  "requestBody": {
+                    "required": true,
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "properties": {
+                            "jsonrpc": { "type": "string", "example": "2.0" },
+                            "method": { "type": "string", "example": "tools/list" },
+                            "params": { "type": "object" },
+                            "id": { "type": "integer", "example": 1 }
+                          },
+                          "required": ["jsonrpc", "method"]
+                        }
+                      }
+                    }
+                  },
+                  "responses": {
+                    "200": {
+                      "description": "Successful MCP Response",
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "security": [
+                    {
+                      "BearerAuth": []
+                    }
+                  ]
+                }
+              }
+            },
+            "components": {
+              "securitySchemes": {
+                "BearerAuth": {
+                  "type": "http",
+                  "scheme": "bearer",
+                  "bearerFormat": "JWT",
+                  "description": "Bearer token generated via Globus Auth or dashboard"
+                }
+              }
+            }
+          };
+          configText = JSON.stringify(chatgptConfig, null, 2);
+          break;
+
+        case "codex":
+          pathHint = "Python / OpenAI Function Calling (OpenAI SDK / Codex Client)";
+          configText = `"""
+OpenAI Codex / Function Calling Client for Jefferson Lab LQCD MCP Proxy
+"""
+import os
+import requests
+from openai import OpenAI
+
+# 1. Connection settings
+MCP_PROXY_URL = "${url}"
+AUTH_TOKEN = "${token}"
+HEADERS = {
+    "Authorization": f"Bearer {AUTH_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# 2. Query available MCP tools
+def list_mcp_tools():
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "tools/list",
+        "params": {},
+        "id": 1
+    }
+    resp = requests.post(MCP_PROXY_URL, json=payload, headers=HEADERS)
+    resp.raise_for_status()
+    data = resp.json()
+    tools = data.get("result", {}).get("tools", [])
+    
+    # Format for OpenAI Function Calling
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("inputSchema", {"type": "object", "properties": {}})
+            }
+        }
+        for t in tools
+    ]
+
+# 3. Initialize OpenAI Client (Codex / GPT-4o)
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+tools = list_mcp_tools()
+print(f"Loaded {len(tools)} tools from JLab LQCD MCP Proxy.")
+
+# 4. Example Chat Completion with Tool Invocation
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are an assistant with access to JLab LQCD Slurm cluster resources."},
+        {"role": "user", "content": "How many idle compute nodes are available?"}
+    ],
+    tools=tools,
+    tool_choice="auto"
+)
+
+print("Codex Response:", response.choices[0].message)
+`;
+          break;
+
+        case "env":
+          pathHint = "~/.bashrc or ~/.zshrc or deployment environment";
+          configText = `# Jefferson Lab LQCD MCP Proxy Environment Variables\nexport MCP_PROXY_URL="${url}"\nexport MCP_AUTH_TOKEN="${token}"\nexport JLAB_LQCD_TOKEN="${token}"`;
+          break;
+      }
+
+      if (pathHintEl) pathHintEl.textContent = pathHint;
+      previewEl.textContent = configText;
+    }
+
+    function copyMcpExportConfig() {
+      const previewEl = document.getElementById("export-config-preview");
+      if (!previewEl) return;
+      navigator.clipboard.writeText(previewEl.textContent).then(() => {
+        showToast("📋 Configuration copied to clipboard!");
+      }).catch(err => {
+        showToast(`❌ Failed to copy: ${err.message}`);
+      });
+    }
+
+    function downloadMcpConfigFile() {
+      const client = document.getElementById("export-client-select").value;
+      const previewEl = document.getElementById("export-config-preview");
+      if (!previewEl) return;
+
+      let filename = "mcp.json";
+      let mimeType = "application/json";
+
+      if (client === "antigravity") {
+        filename = "mcp_config.json";
+      } else if (client === "cursor") {
+        filename = "mcp.json";
+      } else if (client === "claude") {
+        filename = "claude_desktop_config.json";
+      } else if (client === "chatgpt") {
+        filename = "chatgpt_openapi.json";
+      } else if (client === "codex") {
+        filename = "openai_codex_client.py";
+        mimeType = "text/x-python";
+      } else if (client === "env") {
+        filename = "mcp_env.sh";
+        mimeType = "text/plain";
+      }
+
+      const blob = new Blob([previewEl.textContent], { type: mimeType });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      showToast(`💾 Downloaded ${filename}`);
     }
 
     function showAlert(htmlContent, isHtml = false) {

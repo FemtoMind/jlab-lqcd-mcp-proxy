@@ -120,18 +120,37 @@ async def get_dashboard_user(
     if ticket_data and ticket_data.get("username"):
         return ticket_data["username"]
 
-    # Also check if it's a valid OIDC bearer token directly (e.g. from an API client)
+    # Also check if it's a valid OIDC bearer token directly (e.g. from an API client or dashboard login)
     try:
-        from lqcd_oidc_auth import validate_and_map_user_token
+        from lqcd_oidc_auth import validate_authorized_token, map_user_info_to_account
 
-        local_account = validate_and_map_user_token(token)
-        if local_account:
-            lqcd_logger.info(f"OIDC token mapped to local account '{local_account}'.")
-            return local_account
+        valid, user_info = validate_authorized_token(token)
+        if valid and isinstance(user_info, dict):
+            local_account = map_user_info_to_account(user_info)
+            if local_account:
+                lqcd_logger.info(f"OIDC token mapped to local account '{local_account}'.")
+                return local_account
+
+            user_identity = (
+                user_info.get("username")
+                or user_info.get("email")
+                or user_info.get("preferred_username")
+                or user_info.get("sub")
+                or "unknown"
+            )
+            lqcd_logger.warning(
+                f"User '{user_identity}' authenticated via Globus/OIDC but has no local account."
+            )
+            raise HTTPException(
+                status_code=403,
+                detail=f"You do not have a local account on this system. User identity '{user_identity}' is authenticated via Globus, but is not registered in the cluster user mapping. Please contact the administrator.",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         lqcd_logger.debug(f"Direct OIDC validation error for dashboard: {e}")
 
     raise HTTPException(
         status_code=401,
-        detail="Invalid or expired dashboard authorization ticket. Please re-open the dashboard from your MCP client.",
+        detail="Invalid or expired dashboard authorization ticket. Please sign in with Globus or re-open the dashboard from your MCP client.",
     )
