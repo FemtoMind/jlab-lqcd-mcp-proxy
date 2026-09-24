@@ -4,11 +4,11 @@ MCP_USE_JLAB_SLURM=true
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_cilogon.json
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_github.json
 #LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_oidc_settings_globus.json
-LQCDMCP_OIDC_INFO_FILE=/home/chen/amsc/fastmcp/jlab-lqcd-mcp-proxy-vscode/lqcd_oidc_settings_globus_iri.json
+LQCDMCP_OIDC_INFO_FILE=/usr/local/lqcd_proxy/etc/lqcd_oidc_settings_globus_iri.json
 # Convert user id to local account mapping file
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map.json
 #LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_github.json
-LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/jlab-lqcd-mcp-proxy/lqcd_userid_map_globus.json
+LQCDMCP_USERID_MAP_FILE=/usr/local/lqcd_proxy/etc/lqcd_userid_map_globus.json
 # Storage file for live launched MCP servers
 LQCDMCP_MCP_SERVERS_STORE=/usr/local/lqcd_proxy/run/lqcd_mcp_servers_store.json
 # Integrate with IRI
