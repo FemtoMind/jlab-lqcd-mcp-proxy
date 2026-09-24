@@ -4,7 +4,7 @@
   "token_verify_url": "https://auth.globus.org/v2/oauth2/userinfo",
   "client_id": "2fea8395-fc80-48b6-b93b-a557e22662d3",
   "client_secret": "",
-  "scope": "openid email profile https://auth.globus.org/scopes/1cbc3307-9e6a-4730-a4b5-9e6d8ec37326/iri_api",
+  "scope": "openid email profile https://auth.globus.org/scopes/1cbc3307-9e6a-4730-a4b5-9e6d8ec37326/iri_api urn:globus:auth:scope:transfer.api.globus.org:all[*https://auth.globus.org/scopes/b0fca1ad-f485-4a00-8fcd-bca0b93a2a1c/data_access] urn:globus:auth:scope:transfer.api.globus.org:all[*https://auth.globus.org/scopes/a2f9c453-2bb6-4336-919d-f195efcf327b/data_access]",
   "grant_type": "authorization_code",
   "redirect_uri": "https://auth.globus.org/v2/web/auth-code",
   "provider": "globus",
