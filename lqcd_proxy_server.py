@@ -11,7 +11,6 @@ import time
 import json
 import os
 import sys
-from dotenv import load_dotenv
 from fastapi.security import HTTPBearer
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
@@ -31,16 +30,21 @@ from lqcd_logger import lqcd_logger, setup_lqcd_file_logger, is_logging_to_file
 
 # Global settings
 import lqcd_mcp_settings
+from lqcd_mcp_settings import load_server_env
 
-# load .env file
-load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=True)
+# load .server_env file
+_env_file_path = load_server_env(override=True)
 
 # check log file name
 log_file_name = os.getenv("PROXY_LOG_FILE")
 if log_file_name:
     setup_lqcd_file_logger(log_file_name)
 
-lqcd_logger.info("Loading .server_env file...")
+if _env_file_path:
+    lqcd_logger.info(f"Loaded .server_env from: {_env_file_path}")
+else:
+    lqcd_logger.error("No .server_env file found.")
+    sys.exit(1)
 # Check whether we are running inside jlab network
 _jlab_slurm = os.getenv("MCP_USE_JLAB_SLURM", "true").lower() == "true"
 

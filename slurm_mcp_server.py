@@ -18,10 +18,10 @@ import subprocess
 import asyncio
 import json
 import os
-from dotenv import load_dotenv
+from lqcd_mcp_settings import load_server_env
 
-# load .server_env file
-load_dotenv(os.path.join(os.path.dirname(__file__), ".server_env"), override=False)
+# load .server_env file without overriding the loader in another module
+load_server_env(override=False)
 
 import uvicorn
 import pwd
