@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Guide - JLab LQCD MCP Proxy & IRI API</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-base: #0b0f19;
+      --bg-surface: #111827;
+      --bg-card: #1f2937;
+      --bg-card-hover: #283548;
+      --border-color: #374151;
+      --border-focus: #3b82f6;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-gradient: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --code-bg: #0d1117;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15);
+      --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.2);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.6;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-surface);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4b5563;
+    }
+
+    /* Header */
+    header {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      padding: 0.85rem 2rem;
+    }
+
+    .header-container {
+      max-width: 1300px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: var(--primary-gradient);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .logo-title h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .logo-title p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: #4b5563;
+    }
+
+    /* Container Layout */
+    .layout-container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 2.5rem;
+      width: 100%;
+      flex: 1;
+    }
+
+    @media (max-width: 900px) {
+      .layout-container {
+        grid-template-columns: 1fr;
+        padding: 1rem;
+      }
+      .sidebar {
+        display: none;
+      }
+    }
+
+    /* Sticky Sidebar Navigation */
+    .sidebar {
+      position: sticky;
+      top: 5.5rem;
+      height: fit-content;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1rem;
+    }
+
+    .sidebar-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+      padding-left: 0.5rem;
+    }
+
+    .sidebar-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sidebar-link:hover {
+      color: var(--text-main);
+      background: var(--bg-card);
+    }
+
+    .sidebar-link.active {
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.12);
+      font-weight: 600;
+    }
+
+    /* Main Content Styling */
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: 2.5rem;
+    }
+
+    .hero-card {
+      background: linear-gradient(135deg, rgba(31, 41, 55, 0.7) 0%, rgba(17, 24, 39, 0.9) 100%);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-card h2 {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-card p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 800px;
+    }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .section-card h3 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #f3f4f6;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .badge-option {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-jlab {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+    .badge-multisite {
+      background: rgba(139, 92, 246, 0.2);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.4);
+    }
+
+    /* Comparison Table */
+    .table-wrapper {
+      overflow-x: auto;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background: rgba(0, 0, 0, 0.2);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Feature Grid */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-top: 0.5rem;
+    }
+
+    .feature-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .feature-box-title {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .feature-box-desc {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Code Blocks */
+    .code-wrapper {
+      position: relative;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin: 0.5rem 0;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    pre {
+      padding: 14px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #e5e7eb;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #93c5fd;
+    }
+
+    .copy-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .copy-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-main);
+    }
+
+    /* Note/Callout Boxes */
+    .callout {
+      padding: 1rem 1.25rem;
+      border-radius: var(--radius-md);
+      border-left: 4px solid var(--primary);
+      background: rgba(59, 130, 246, 0.08);
+      font-size: 0.9rem;
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .callout.warning {
+      border-left-color: var(--warning);
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .callout.success {
+      border-left-color: var(--success);
+      background: rgba(16, 185, 129, 0.08);
+    }
+    .callout-title {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Steps list */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      counter-reset: step-count;
+      margin-top: 0.5rem;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      counter-increment: step-count;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      background: var(--primary-gradient);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+
+    .step-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex: 1;
+    }
+
+    .step-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-main);
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="header-container">
+      <a href="/jlab/lqcd/mcp/dashboard/" class="logo-group">
+        <div class="logo-icon">⚛</div>
+        <div class="logo-title">
+          <h1>JLab LQCD MCP & IRI Guide</h1>
+          <p>Jefferson Lab Computing & Multi-Site IRI Documentation</p>
+        </div>
+      </a>
+      <div class="header-nav">
+        <a href="/jlab/lqcd/mcp/dashboard/" class="btn btn-primary">
+          🖥️ Open Dashboard
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="layout-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Documentation</div>
+      <a href="#overview" class="sidebar-link active">📖 Overview</a>
+      <a href="#decision" class="sidebar-link">⚖️ Which Option to Choose</a>
+      <a href="#option1" class="sidebar-link">🖥️ Option 1: Web Dashboard</a>
+      <a href="#option2" class="sidebar-link">🌐 Option 2: Multi-Site CLI</a>
+      <a href="#clients" class="sidebar-link">🔌 VS Code & Claude Setup</a>
+      <a href="#troubleshooting" class="sidebar-link">🛠️ Troubleshooting</a>
+    </aside>
+
+    <!-- Content Sections -->
+    <main class="content">
+
+      <!-- Hero Header -->
+      <section id="overview" class="hero-card">
+        <h2>Using the MCP Proxy & IRI API Server</h2>
+        <p>
+          The <strong>Jefferson Lab LQCD MCP Proxy</strong> and <strong>IRI Facility API</strong> integrate Slurm high-performance compute with AI assistants (Model Context Protocol) and multi-site DOE computational infrastructure.
+        </p>
+      </section>
+
+      <!-- Option Decision Matrix -->
+      <section id="decision" class="section-card">
+        <h3>⚖️ Choose Your Workflow</h3>
+        <p style="color: var(--text-muted);">
+          Depending on whether your workflow is focused on JLab alone or spans multiple national laboratory facilities, select the corresponding approach:
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Workflow Mode</th>
+                <th>Target Facilities</th>
+                <th>Recommended Interface</th>
+                <th>Primary Highlights</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Option 1</strong></td>
+                <td><span class="badge-option badge-jlab">JLab LQCD Only</span></td>
+                <td><strong>Web Dashboard</strong></td>
+                <td>Browser UI, 1-click login (CILogon/Globus/GitHub), Slurm MCP launcher, live log viewer, interactive tool runner.</td>
+              </tr>
+              <tr>
+                <td><strong>Option 2</strong></td>
+                <td><span class="badge-option badge-multisite">Multi-Site (JLab, NERSC, ALCF)</span></td>
+                <td><strong><code>get_globus_token.sh</code></strong></td>
+                <td>CLI Globus Auth token generator with unified IRI API scopes & Globus Transfer permissions across DOE sites.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Option 1: Web Dashboard -->
+      <section id="option1" class="section-card">
+        <h3>
+          <span>🖥️ Option 1: Using the Web Dashboard</span>
+          <span class="badge-option badge-jlab">JLab Resources Only</span>
+        </h3>
+        
+        <p style="color: var(--text-muted);">
+          If you are only interacting with Jefferson Lab compute resources and Slurm queues, use the interactive Web Dashboard. No command-line token management is needed.
+        </p>
+
+        <div class="steps-list">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Access the Dashboard URL</div>
+              <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Open your browser and navigate to the dashboard endpoint:
+              </p>
+              <div class="code-wrapper">
+                <div class="code-header">
+                  <span>URL</span>
+                  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code>http://&lt;mcp-proxy-host&gt;:8000/jlab/lqcd/mcp/dashboard/</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Sign In via Identity Provider</div>
+              <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Click <strong>Sign In</strong> and authenticate via <strong>CILogon</strong>, <strong>Globus</strong>, <strong>GitHub</strong>, or <strong>Google</strong>. The server automatically associates your identity with your local JLab username and Slurm account allocations.
+              </p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Utilize Dashboard Capabilities</div>
+              <div class="feature-grid">
+                <div class="feature-box">
+                  <div class="feature-box-title">📊 Cluster Status</div>
+                  <div class="feature-box-desc">Inspect idle/busy nodes, partition limits (CPU/GPU), memory allocations, and your project accounts.</div>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-box-title">🚀 Launch MCP Servers</div>
+                  <div class="feature-box-desc">Submit interactive MCP server batch jobs to Slurm nodes with custom scripts or server file paths.</div>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-box-title">🧪 In-Browser Tool Runner</div>
+                  <div class="feature-box-desc">Introspect active tools on running MCP servers, provide parameters, and execute tools directly on the web page.</div>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-box-title">📜 Real-time Log Viewer</div>
+                  <div class="feature-box-desc">Read stdout and stderr streams for active Slurm jobs without requiring an SSH connection.</div>
+                </div>
+                <div class="feature-box">
+                  <div class="feature-box-title">📦 Config Exporter</div>
+                  <div class="feature-box-desc">Generate one-click JSON configurations for VS Code (<code>mcp.json</code>) or Claude Desktop.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Option 2: Multi-Site CLI -->
+      <section id="option2" class="section-card">
+        <h3>
+          <span>🌐 Option 2: Using <code>get_globus_token.sh</code></span>
+          <span class="badge-option badge-multisite">Multi-Site (JLab, NERSC, ALCF)</span>
+        </h3>
+
+        <p style="color: var(--text-muted);">
+          When orchestrating workflows across multiple facilities (such as querying both JLab and NERSC, or moving data between JLab DTN and ALCF), use <code>get_globus_token.sh</code> to generate unified Globus Auth and Transfer tokens.
+        </p>
+
+        <div class="steps-list">
+          <div class="step-item">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <div class="step-title">Run the Token Helper Script</div>
+              <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Run the shell wrapper script. It automatically ensures <code>globus-sdk</code> is available:
+              </p>
+              <div class="code-wrapper">
+                <div class="code-header">
+                  <span>Bash</span>
+                  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code>./get_globus_token.sh</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <div class="step-title">Complete Interactive Authorization</div>
+              <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Open the printed Globus authorization link in your browser, log in, grant consent for requested facility scopes (JLab, NERSC, ALCF, Transfer), and paste the resulting auth code back into your terminal.
+              </p>
+              <div class="callout success">
+                <div class="callout-title">🔒 Secure Storage</div>
+                Tokens are stored securely at <code>~/.globus/auth_tokens.json</code> with private permissions (<code>0600</code>).
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <div class="step-title">Useful Script Commands</div>
+              <div class="code-wrapper">
+                <div class="code-header">
+                  <span>Command Examples</span>
+                  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code># 1. Request tokens for specific facilities
+./get_globus_token.sh --facilities jlab nersc
+
+# 2. Output access tokens to stdout for scripts or environment variables
+./get_globus_token.sh --print-token
+
+# 3. Refresh saved tokens silently in the background
+./get_globus_token.sh --refresh-only
+
+# 4. Force a fresh browser login
+./get_globus_token.sh --force-login --prompt-login
+
+# 5. Validate tokens against live facility endpoints
+./get_globus_token.sh --validate-iri</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <div class="step-title">Calling Services with Acquired Tokens</div>
+              <p style="color: var(--text-muted); font-size: 0.875rem;">
+                Use the generated tokens in HTTP headers when querying MCP Proxy or facility IRI API endpoints:
+              </p>
+              <div class="code-wrapper">
+                <div class="code-header">
+                  <span>API Requests</span>
+                  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code># Query JLab MCP Proxy
+curl -X POST http://&lt;mcp-proxy-host&gt;:8000/cloud/my-server/mcp \
+  -H "Authorization: Bearer &lt;JLAB_TOKEN&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "method": "tools/list", "id": 1}'
+
+# Query NERSC IRI API Status
+curl -X GET https://api.iri.nersc.gov/api/v2/account/projects \
+  -H "Authorization: Bearer &lt;NERSC_TOKEN&gt;"
+
+# Submit JLab compute job with facility project header
+curl -X POST http://&lt;jlab-iri-host&gt;:8000/api/v2/compute/jobs \
+  -H "Authorization: Bearer &lt;JLAB_TOKEN&gt;" \
+  -H "X-IRI-Facility-Project: lqcd" \
+  -H "Content-Type: application/json" \
+  -d @job_spec.json</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Client Configuration -->
+      <section id="clients" class="section-card">
+        <h3>🔌 Connecting VS Code & Claude Desktop</h3>
+        <p style="color: var(--text-muted);">
+          To connect your IDE or local AI assistant to a running MCP server managed by the proxy:
+        </p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>VS Code (.vscode/mcp.json)</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>{
+  "mcpServers": {
+    "jlab-lqcd-mcp": {
+      "url": "http://&lt;mcp-proxy-host&gt;:8000/cloud/&lt;server_name&gt;/mcp",
+      "type": "http"
+    }
+  }
+}</code></pre>
+        </div>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>Claude Desktop (claude_desktop_config.json)</span>
+            <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre><code>{
+  "mcpServers": {
+    "jlab-lqcd-mcp": {
+      "url": "http://&lt;mcp-proxy-host&gt;:8000/cloud/&lt;server_name&gt;/mcp"
+    }
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Troubleshooting -->
+      <section id="troubleshooting" class="section-card">
+        <h3>🛠️ Troubleshooting & FAQs</h3>
+        
+        <div class="feature-grid">
+          <div class="feature-box">
+            <div class="feature-box-title">⚠️ 401 Unauthorized Error</div>
+            <div class="feature-box-desc">
+              Your token may have expired. Re-run <code>./get_globus_token.sh --force-login</code>, or click <strong>Sign In</strong> in the Web Dashboard.
+            </div>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">🏢 ALCF Identity Requirements</div>
+            <div class="feature-box-desc">
+              ALCF IRI API requires an ALCF identity as the primary Globus identity. When querying ALCF, ensure you authenticate with your ALCF account.
+            </div>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">⏳ MCP Server State is PENDING</div>
+            <div class="feature-box-desc">
+              Slurm has queued your server job. Tools will automatically become active in the dashboard once the job transitions to <code>RUNNING</code>.
+            </div>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">📁 Job Logs Not Showing</div>
+            <div class="feature-box-desc">
+              Slurm flushes stdout in chunks. If logs are empty immediately after launch, wait a few seconds and click <strong>Refresh</strong>.
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>Jefferson Lab LQCD Computing &bull; Model Context Protocol Proxy &bull; Integrated Research Infrastructure (IRI)</p>
+  </footer>
+
+  <script>
+    function copyCode(button) {
+      const codeBlock = button.closest('.code-wrapper').querySelector('pre code');
+      if (codeBlock) {
+        navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+          const orig = button.innerText;
+          button.innerText = 'Copied!';
+          setTimeout(() => {
+            button.innerText = orig;
+          }, 2000);
+        });
+      }
+    }
+
+    // Highlight sidebar links on scroll
+    window.addEventListener('DOMContentLoaded', () => {
+      const links = document.querySelectorAll('.sidebar-link');
+      const sections = document.querySelectorAll('section[id]');
+
+      window.addEventListener('scroll', () => {
+        let current = '';
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop - 120;
+          if (window.scrollY >= sectionTop) {
+            current = section.getAttribute('id');
+          }
+        });
+
+        links.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === `#${current}`) {
+            link.classList.add('active');
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
