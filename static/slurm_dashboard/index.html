@@ -697,6 +697,32 @@
       border-bottom: 1px solid var(--border-color);
       vertical-align: middle;
     }
+    .data-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease, color 0.15s ease;
+      white-space: nowrap;
+    }
+    .data-table th.sortable:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+    }
+    .data-table th.sortable .sort-icon {
+      display: inline-block;
+      margin-left: 4px;
+      font-size: 0.72rem;
+      opacity: 0.4;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      vertical-align: middle;
+    }
+    .data-table th.sortable.active-sort {
+      color: #60a5fa !important;
+      background: rgba(96, 165, 250, 0.08);
+    }
+    .data-table th.sortable.active-sort .sort-icon {
+      opacity: 1;
+      color: #60a5fa;
+    }
     .data-table tbody tr {
       transition: background 0.15s ease;
     }
@@ -726,6 +752,9 @@
         </button>
         <button class="btn btn-secondary btn-sm" id="btn-export-mcp" onclick="openExportMcpModal()" title="Export MCP Client Configuration (VS Code, Antigravity, Cursor, Claude)" style="display: none;">
           📦 Export MCP Config
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-view-tokens" onclick="openTokenModal()" title="View & Copy Active Globus / IRI API / Transfer Tokens" style="display: none;">
+          🔑 Copy Tokens
         </button>
         <button class="btn btn-primary btn-sm" id="btn-signin" onclick="openAuthModal()" style="display: none;">
           🔑 Sign In
@@ -871,7 +900,7 @@
     <!-- 2. Regular Slurm Jobs Section -->
     <div id="section-regular-jobs" style="display: none;">
       <div class="servers-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
           <div>
             <h2 class="section-title" style="margin-bottom: 2px;">Regular Slurm Batch Jobs</h2>
             <span style="font-size: 0.85rem; color: var(--text-muted);" id="regular-job-count-label">0 jobs found</span>
@@ -879,17 +908,43 @@
           <button class="btn btn-secondary btn-sm" onclick="loadRegularJobs()">🔄 Refresh Jobs</button>
         </div>
 
+        <!-- Filter and Search Toolbar -->
+        <div class="control-bar" style="margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: rgba(255, 255, 255, 0.02); padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+          <div class="filter-tabs" id="regular-state-filters" style="margin-bottom: 0;">
+            <button class="tab-btn active" id="tab-reg-all" onclick="setRegularJobFilter('all')">All Jobs</button>
+            <button class="tab-btn" id="tab-reg-running" onclick="setRegularJobFilter('running')">▶️ Running</button>
+            <button class="tab-btn" id="tab-reg-pending" onclick="setRegularJobFilter('pending')">⏱️ Pending</button>
+            <button class="tab-btn" id="tab-reg-completed" onclick="setRegularJobFilter('completed')">✅ Completed</button>
+            <button class="tab-btn" id="tab-reg-other" onclick="setRegularJobFilter('other')">❌ Failed / Cancelled</button>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center; flex-grow: 1; max-width: 320px;">
+            <input type="text" id="regular-job-search" class="form-control" placeholder="🔍 Filter by ID, Name, Partition..." style="padding: 6px 12px; font-size: 0.83rem;" oninput="renderRegularJobs(allRegularJobs)">
+          </div>
+        </div>
+
         <div class="table-responsive" style="overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
           <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem;">
             <thead>
               <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.02); color: var(--text-muted);">
-                <th style="padding: 12px 16px;">Job ID</th>
-                <th style="padding: 12px 16px;">Job Name</th>
-                <th style="padding: 12px 16px;">Partition</th>
-                <th style="padding: 12px 16px;">State</th>
-                <th style="padding: 12px 16px;">Time (Used / Limit)</th>
-                <th style="padding: 12px 16px;">Nodes / Info</th>
-                <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                <th class="sortable active-sort" id="th-job_id" onclick="sortRegularJobs('job_id')" title="Click to sort by Job ID" style="padding: 12px 16px;">
+                  Job ID <span class="sort-icon" id="sort-icon-job_id">▼</span>
+                </th>
+                <th class="sortable" id="th-job_name" onclick="sortRegularJobs('job_name')" title="Click to sort by Job Name" style="padding: 12px 16px;">
+                  Job Name <span class="sort-icon" id="sort-icon-job_name">↕</span>
+                </th>
+                <th class="sortable" id="th-partition" onclick="sortRegularJobs('partition')" title="Click to sort by Partition" style="padding: 12px 16px;">
+                  Partition <span class="sort-icon" id="sort-icon-partition">↕</span>
+                </th>
+                <th class="sortable" id="th-state" onclick="sortRegularJobs('state')" title="Click to sort by State" style="padding: 12px 16px;">
+                  State <span class="sort-icon" id="sort-icon-state">↕</span>
+                </th>
+                <th class="sortable" id="th-time_used" onclick="sortRegularJobs('time_used')" title="Click to sort by Time Used" style="padding: 12px 16px;">
+                  Time (Used / Limit) <span class="sort-icon" id="sort-icon-time_used">↕</span>
+                </th>
+                <th class="sortable" id="th-nodes" onclick="sortRegularJobs('nodes')" title="Click to sort by Nodes / Info" style="padding: 12px 16px;">
+                  Nodes / Info <span class="sort-icon" id="sort-icon-nodes">↕</span>
+                </th>
+                <th style="padding: 12px 16px; text-align: right; user-select: none;">Actions</th>
               </tr>
             </thead>
             <tbody id="regular-jobs-tbody">
@@ -1144,7 +1199,8 @@
         <!-- Current Status & Sign Out -->
         <div id="auth-current-status" style="display: none; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <span style="font-size: 0.85rem; color: var(--text-muted);">Current User: <strong id="auth-modal-user" style="color: var(--text-main);"></strong></span>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-sm" id="auth-modal-copy-tokens-btn" onclick="openTokenModal()">🔑 Copy Tokens</button>
             <button class="btn btn-secondary btn-sm" onclick="openExportMcpModal()">📦 Export MCP Config</button>
             <button class="btn btn-danger btn-sm" onclick="signOut()">Sign Out</button>
           </div>
@@ -1152,6 +1208,101 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-auth')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: View & Copy Tokens -->
+  <div class="modal-overlay" id="modal-view-tokens">
+    <div class="modal-box large">
+      <div class="modal-header">
+        <h2>🔑 Active Authentication & Transfer Tokens</h2>
+        <button class="modal-close" onclick="closeModal('modal-view-tokens')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0;">
+          Copy your active Globus bearer tokens to authenticate with the <strong>JLab LQCD IRI API</strong>, <strong>FastAPI /docs Swagger UI</strong>, or <strong>Globus Transfer</strong> endpoints.
+        </p>
+
+        <!-- Token Cards Container -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          
+          <!-- Card 1: JLab IRI API Token -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">🏛️</span>
+                <div>
+                  <strong style="font-size: 0.95rem; color: var(--text-main);">JLab LQCD / IRI Facility API Token</strong>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    Audience / Resource Server: <code>1cbc3307-9e6a-4730-a4b5-9e6d8ec37326/iri_api</code>
+                  </div>
+                </div>
+              </div>
+              <span id="iri-token-status-badge" class="badge badge-running" style="font-size: 0.75rem;">Active</span>
+            </div>
+
+            <div style="position: relative;">
+              <textarea id="token-iri-api-display" readonly class="form-control" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; min-height: 70px; resize: vertical; word-break: break-all;" placeholder="No active IRI token"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <span style="font-size: 0.78rem; color: var(--text-muted);">
+                💡 Paste this token into the <strong>Authorize</strong> popup in Swagger UI or HTTP <code>Authorization: Bearer &lt;token&gt;</code>.
+              </span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-secondary btn-sm" onclick="copyIriBearerHeader()">📋 Copy Bearer Header</button>
+                <button class="btn btn-primary btn-sm" onclick="copyIriApiToken()">📋 Copy Token</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Globus Transfer Token -->
+          <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.2rem;">⚡</span>
+                <div>
+                  <strong style="font-size: 0.95rem; color: var(--text-main);">Globus Transfer API Token</strong>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    Audience / Resource Server: <code>transfer.api.globus.org</code> (Collections: <code>jlab#gw1</code>, <code>jlab#gw2</code>)
+                  </div>
+                </div>
+              </div>
+              <span id="transfer-token-status-badge" class="badge badge-running" style="font-size: 0.75rem;">Active</span>
+            </div>
+
+            <div style="position: relative;">
+              <textarea id="token-transfer-display" readonly class="form-control" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; min-height: 70px; resize: vertical; word-break: break-all;" placeholder="No separate transfer token found"></textarea>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <span style="font-size: 0.78rem; color: var(--text-muted);">
+                💡 Use this token with Globus SDK or Transfer API endpoints for managing transfers.
+              </span>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-primary btn-sm" id="btn-copy-transfer-token" onclick="copyTransferToken()">📋 Copy Transfer Token</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Collapsible: Full Token JSON / Payload Details -->
+          <details style="background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px;">
+            <summary style="font-size: 0.82rem; font-weight: 600; color: var(--text-dim); cursor: pointer;">
+              🔍 Full Token Response / JSON Metadata
+            </summary>
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+              <pre id="token-full-json-display" style="background: var(--bg-base); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #a7f3d0; overflow-x: auto; max-height: 200px; margin: 0; line-height: 1.4;"></pre>
+              <div style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" onclick="copyFullTokenJson()">📋 Copy Full JSON</button>
+              </div>
+            </div>
+          </details>
+
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-view-tokens')">Close</button>
       </div>
     </div>
   </div>
@@ -1367,6 +1518,8 @@
           if (timerEl) timerEl.textContent = "Paused";
           document.getElementById("btn-signin").style.display = "inline-flex";
           document.getElementById("btn-export-mcp").style.display = "none";
+          const viewTokensBtn = document.getElementById("btn-view-tokens");
+          if (viewTokensBtn) viewTokensBtn.style.display = "none";
           document.getElementById("user-badge").style.display = "none";
 
           let errorDetail = "";
@@ -1438,6 +1591,11 @@
         hideAlert();
         document.getElementById("btn-signin").style.display = "none";
         document.getElementById("btn-export-mcp").style.display = "inline-flex";
+        const hasTokenBundle = !!sessionStorage.getItem("mcp_token_bundle");
+        const viewTokensBtn = document.getElementById("btn-view-tokens");
+        if (viewTokensBtn) viewTokensBtn.style.display = hasTokenBundle ? "inline-flex" : "none";
+        const authModalCopyBtn = document.getElementById("auth-modal-copy-tokens-btn");
+        if (authModalCopyBtn) authModalCopyBtn.style.display = hasTokenBundle ? "inline-flex" : "none";
         document.getElementById("user-badge").style.display = "flex";
 
         const statusData = await statusRes.json();
@@ -2135,11 +2293,17 @@ python3 /path/to/my_mcp_server.py
     function openAuthModal() {
       const userStatusEl = document.getElementById("auth-current-status");
       const modalUserEl = document.getElementById("auth-modal-user");
+      const copyBtn = document.getElementById("auth-modal-copy-tokens-btn");
+      const hasTokenBundle = !!sessionStorage.getItem("mcp_token_bundle");
+
       if (currentUser && currentUser !== "unknown") {
         modalUserEl.textContent = currentUser;
         userStatusEl.style.display = "flex";
       } else {
         userStatusEl.style.display = "none";
+      }
+      if (copyBtn) {
+        copyBtn.style.display = hasTokenBundle ? "inline-flex" : "none";
       }
       openModal("modal-auth");
     }
@@ -2232,7 +2396,7 @@ python3 /path/to/my_mcp_server.py
               const target = extractTargetToken(pData, authInfoCache.globus_rs_id, authInfoCache.globus_rs_scope_suffix);
               if (target && target.access_token) {
                 clearInterval(devicePollInterval);
-                setAuthenticatedToken(target.access_token);
+                setAuthenticatedToken(target.access_token, pData);
               }
             } catch (e) {
               console.error("Polling error:", e);
@@ -2268,7 +2432,7 @@ python3 /path/to/my_mcp_server.py
         const target = extractTargetToken(data, authInfoCache?.globus_rs_id, authInfoCache?.globus_rs_scope_suffix);
 
         if (target && target.access_token) {
-          setAuthenticatedToken(target.access_token);
+          setAuthenticatedToken(target.access_token, data);
         } else {
           showToast(`❌ Verification failed: ${JSON.stringify(data)}`);
         }
@@ -2287,12 +2451,17 @@ python3 /path/to/my_mcp_server.py
         showToast("⚠️ Please enter a token");
         return;
       }
-      setAuthenticatedToken(val);
+      setAuthenticatedToken(val, null);
     }
 
-    function setAuthenticatedToken(token) {
+    function setAuthenticatedToken(token, rawData) {
       authToken = token;
       sessionStorage.setItem("mcp_dashboard_token", token);
+      if (rawData && typeof rawData === "object") {
+        sessionStorage.setItem("mcp_token_bundle", JSON.stringify(rawData));
+      } else {
+        sessionStorage.removeItem("mcp_token_bundle");
+      }
       closeModal("modal-auth");
       startAutoRefresh();
       fetchDashboardData();
@@ -2302,13 +2471,17 @@ python3 /path/to/my_mcp_server.py
       authToken = "";
       currentUser = "";
       sessionStorage.removeItem("mcp_dashboard_token");
+      sessionStorage.removeItem("mcp_token_bundle");
       closeModal("modal-auth");
+      closeModal("modal-view-tokens");
       document.getElementById("user-name").textContent = "Not Authenticated";
       document.getElementById("user-avatar").textContent = "?";
       document.getElementById("btn-signin").style.display = "inline-flex";
       document.getElementById("user-badge").style.display = "none";
       const exportBtn = document.getElementById("btn-export-mcp");
       if (exportBtn) exportBtn.style.display = "none";
+      const viewTokensBtn = document.getElementById("btn-view-tokens");
+      if (viewTokensBtn) viewTokensBtn.style.display = "none";
 
       const defAccEl = document.getElementById("proj-default-account");
       if (defAccEl) defAccEl.textContent = "--";
@@ -2327,6 +2500,142 @@ python3 /path/to/my_mcp_server.py
 
       showToast("Signed out.");
       fetchDashboardData();
+    }
+
+    // =========================================================================
+    // Token Viewer & Copy Modal Logic
+    // =========================================================================
+    function openTokenModal() {
+      let rawBundle = null;
+      try {
+        const rawStr = sessionStorage.getItem("mcp_token_bundle");
+        if (rawStr) rawBundle = JSON.parse(rawStr);
+      } catch (e) {}
+
+      // 1. JLab IRI API Token
+      let iriToken = authToken || "";
+      if (!iriToken && rawBundle) {
+        const target = extractTargetToken(rawBundle, authInfoCache?.globus_rs_id, authInfoCache?.globus_rs_scope_suffix);
+        if (target && target.access_token) iriToken = target.access_token;
+      }
+      const iriEl = document.getElementById("token-iri-api-display");
+      const iriBadge = document.getElementById("iri-token-status-badge");
+      if (iriEl) {
+        iriEl.value = iriToken || "";
+      }
+      if (iriBadge) {
+        iriBadge.textContent = iriToken ? "Active" : "Not Found";
+        iriBadge.className = iriToken ? "badge badge-running" : "badge badge-stopped";
+      }
+
+      // 2. Globus Transfer Token
+      let transferToken = "";
+      if (rawBundle) {
+        if (rawBundle.resource_server === "transfer.api.globus.org" || (rawBundle.scope && rawBundle.scope.includes("transfer.api.globus.org"))) {
+          transferToken = rawBundle.access_token || "";
+        } else if (Array.isArray(rawBundle.other_tokens)) {
+          const tItem = rawBundle.other_tokens.find(t => 
+            t.resource_server === "transfer.api.globus.org" || 
+            (t.scope && t.scope.includes("transfer.api.globus.org"))
+          );
+          if (tItem && tItem.access_token) {
+            transferToken = tItem.access_token;
+          }
+        }
+      }
+
+      const transEl = document.getElementById("token-transfer-display");
+      const transBadge = document.getElementById("transfer-token-status-badge");
+      const copyTransBtn = document.getElementById("btn-copy-transfer-token");
+      if (transEl) {
+        if (transferToken) {
+          transEl.value = transferToken;
+        } else {
+          transEl.value = "No separate Globus Transfer token found in current session.\n(Sign in with Globus to request JLab transfer scopes: jlab#gw1, jlab#gw2)";
+        }
+      }
+      if (transBadge) {
+        transBadge.textContent = transferToken ? "Active" : "Not Available";
+        transBadge.className = transferToken ? "badge badge-running" : "badge badge-stopped";
+      }
+      if (copyTransBtn) {
+        copyTransBtn.disabled = !transferToken;
+      }
+
+      // 3. Full Token JSON
+      const jsonEl = document.getElementById("token-full-json-display");
+      if (jsonEl) {
+        if (rawBundle) {
+          jsonEl.textContent = JSON.stringify(rawBundle, null, 2);
+        } else if (iriToken) {
+          jsonEl.textContent = JSON.stringify({
+            access_token: iriToken,
+            token_type: "Bearer",
+            note: "Manual token / active dashboard session"
+          }, null, 2);
+        } else {
+          jsonEl.textContent = "{\n  \"message\": \"No active token session\"\n}";
+        }
+      }
+
+      openModal("modal-view-tokens");
+    }
+
+    function copyIriApiToken() {
+      const el = document.getElementById("token-iri-api-display");
+      const val = el ? el.value.trim() : "";
+      if (!val) {
+        showToast("⚠️ No IRI API token to copy");
+        return;
+      }
+      navigator.clipboard.writeText(val).then(() => {
+        showToast("📋 JLab IRI API Token copied to clipboard!");
+      }).catch(() => {
+        showToast("⚠️ Failed to copy to clipboard");
+      });
+    }
+
+    function copyIriBearerHeader() {
+      const el = document.getElementById("token-iri-api-display");
+      const val = el ? el.value.trim() : "";
+      if (!val) {
+        showToast("⚠️ No IRI API token to copy");
+        return;
+      }
+      const header = `Bearer ${val}`;
+      navigator.clipboard.writeText(header).then(() => {
+        showToast("📋 'Bearer <token>' copied to clipboard!");
+      }).catch(() => {
+        showToast("⚠️ Failed to copy to clipboard");
+      });
+    }
+
+    function copyTransferToken() {
+      const el = document.getElementById("token-transfer-display");
+      const val = el ? el.value.trim() : "";
+      if (!val || val.startsWith("No separate")) {
+        showToast("⚠️ No Globus Transfer token available");
+        return;
+      }
+      navigator.clipboard.writeText(val).then(() => {
+        showToast("📋 Globus Transfer Token copied to clipboard!");
+      }).catch(() => {
+        showToast("⚠️ Failed to copy to clipboard");
+      });
+    }
+
+    function copyFullTokenJson() {
+      const el = document.getElementById("token-full-json-display");
+      const val = el ? el.textContent.trim() : "";
+      if (!val) {
+        showToast("⚠️ No token JSON to copy");
+        return;
+      }
+      navigator.clipboard.writeText(val).then(() => {
+        showToast("📋 Full Token JSON copied to clipboard!");
+      }).catch(() => {
+        showToast("⚠️ Failed to copy to clipboard");
+      });
     }
 
     // Export MCP Config Functions
@@ -2823,11 +3132,14 @@ print("Codex Response:", response.choices[0].message)
     }
 
     // =========================================================================
-    // Regular Slurm Jobs Logic
+    // Regular Slurm Jobs Logic (with Column Sorting & Filtering)
     // =========================================================================
     let currentMainTab = "mcp";
     let allRegularJobs = [];
     let currentLogJobId = null;
+    let regularJobsSortKey = "job_id";
+    let regularJobsSortAsc = false; // default descending (newest jobs first)
+    let currentRegularStateFilter = "all";
 
     function switchMainTab(tab) {
       currentMainTab = tab;
@@ -2844,6 +3156,66 @@ print("Codex Response:", response.choices[0].message)
       resetActivityTimer();
     }
 
+    function setRegularJobFilter(filter) {
+      currentRegularStateFilter = filter;
+      document.querySelectorAll("#regular-state-filters .tab-btn").forEach(btn => {
+        btn.classList.remove("active");
+      });
+      const targetBtn = document.getElementById(`tab-reg-${filter}`);
+      if (targetBtn) targetBtn.classList.add("active");
+      renderRegularJobs(allRegularJobs);
+    }
+
+    function parseSlurmTime(timeStr) {
+      if (!timeStr || timeStr === "--" || timeStr === "N/A") return -1;
+      try {
+        let str = String(timeStr).trim();
+        let days = 0;
+        if (str.includes("-")) {
+          const parts = str.split("-");
+          days = parseInt(parts[0], 10) || 0;
+          str = parts[1];
+        }
+        const timeParts = str.split(":").map(Number);
+        if (timeParts.length === 3) {
+          return (days * 86400) + (timeParts[0] * 3600) + (timeParts[1] * 60) + (timeParts[2] || 0);
+        } else if (timeParts.length === 2) {
+          return (days * 86400) + (timeParts[0] * 60) + (timeParts[1] || 0);
+        } else if (timeParts.length === 1) {
+          return (days * 86400) + (timeParts[0] || 0);
+        }
+      } catch (e) {}
+      return -1;
+    }
+
+    function sortRegularJobs(key) {
+      if (regularJobsSortKey === key) {
+        regularJobsSortAsc = !regularJobsSortAsc;
+      } else {
+        regularJobsSortKey = key;
+        // Default descending for numeric IDs and elapsed time, ascending for names/strings
+        regularJobsSortAsc = !["job_id", "time_used"].includes(key);
+      }
+      updateSortIcons();
+      renderRegularJobs(allRegularJobs);
+    }
+
+    function updateSortIcons() {
+      const keys = ["job_id", "job_name", "partition", "state", "time_used", "nodes"];
+      keys.forEach(k => {
+        const thEl = document.getElementById(`th-${k}`);
+        const iconEl = document.getElementById(`sort-icon-${k}`);
+        if (!thEl || !iconEl) return;
+        if (k === regularJobsSortKey) {
+          iconEl.textContent = regularJobsSortAsc ? "▲" : "▼";
+          thEl.classList.add("active-sort");
+        } else {
+          iconEl.textContent = "↕";
+          thEl.classList.remove("active-sort");
+        }
+      });
+    }
+
     async function loadRegularJobs() {
       try {
         const querySuffix = authToken ? `?token=${encodeURIComponent(authToken)}` : "";
@@ -2853,6 +3225,7 @@ print("Codex Response:", response.choices[0].message)
         const data = await res.json();
         if (data.status === "success") {
           allRegularJobs = data.jobs || [];
+          updateSortIcons();
           renderRegularJobs(allRegularJobs);
           updateServerStats();
         } else {
@@ -2915,25 +3288,81 @@ print("Codex Response:", response.choices[0].message)
       const mcpJobIds = new Set(
         allServers.map(s => Number(s.job_id || s.slurm_job_id)).filter(id => id > 0)
       );
-      const filteredJobs = (jobs || []).filter(j => !mcpJobIds.has(Number(j.job_id)));
+      let list = (jobs || []).filter(j => !mcpJobIds.has(Number(j.job_id)));
+
+      // Apply state tab filter
+      if (currentRegularStateFilter === "running") {
+        list = list.filter(j => (j.state || "").toUpperCase() === "RUNNING");
+      } else if (currentRegularStateFilter === "pending") {
+        list = list.filter(j => ["PENDING", "CONFIGURING", "REQUEUED"].includes((j.state || "").toUpperCase()));
+      } else if (currentRegularStateFilter === "completed") {
+        list = list.filter(j => (j.state || "").toUpperCase() === "COMPLETED");
+      } else if (currentRegularStateFilter === "other") {
+        list = list.filter(j => ["FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "BOOT_FAIL"].includes((j.state || "").toUpperCase()));
+      }
+
+      // Apply search keyword filter
+      const searchInput = document.getElementById("regular-job-search");
+      const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+      if (query) {
+        list = list.filter(j => {
+          const jid = String(j.job_id || "").toLowerCase();
+          const jname = String(j.job_name || "").toLowerCase();
+          const part = String(j.partition || "").toLowerCase();
+          const st = String(j.state || "").toLowerCase();
+          const reason = String(j.nodelist_or_reason || "").toLowerCase();
+          const workdir = String(j.work_dir || "").toLowerCase();
+          return jid.includes(query) || jname.includes(query) || part.includes(query) || st.includes(query) || reason.includes(query) || workdir.includes(query);
+        });
+      }
+
+      // Sort list
+      list.sort((a, b) => {
+        let valA, valB;
+        if (regularJobsSortKey === "job_id") {
+          valA = Number(a.job_id) || 0;
+          valB = Number(b.job_id) || 0;
+          return regularJobsSortAsc ? valA - valB : valB - valA;
+        } else if (regularJobsSortKey === "time_used") {
+          valA = parseSlurmTime(a.time_used);
+          valB = parseSlurmTime(b.time_used);
+          return regularJobsSortAsc ? valA - valB : valB - valA;
+        } else if (regularJobsSortKey === "nodes") {
+          valA = Number(a.nodes) || 0;
+          valB = Number(b.nodes) || 0;
+          if (valA !== valB) {
+            return regularJobsSortAsc ? valA - valB : valB - valA;
+          }
+          const infoA = (a.nodelist_or_reason || "").toLowerCase();
+          const infoB = (b.nodelist_or_reason || "").toLowerCase();
+          return regularJobsSortAsc ? infoA.localeCompare(infoB) : infoB.localeCompare(infoA);
+        } else {
+          valA = (a[regularJobsSortKey] || "").toString().toLowerCase();
+          valB = (b[regularJobsSortKey] || "").toString().toLowerCase();
+          return regularJobsSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+      });
 
       const tbody = document.getElementById("regular-jobs-tbody");
-      document.getElementById("regular-job-count-label").textContent = `${filteredJobs.length} jobs found`;
+      const countLabel = document.getElementById("regular-job-count-label");
+      if (countLabel) {
+        countLabel.textContent = `${list.length} jobs shown (${(jobs || []).length} total)`;
+      }
 
-      if (!filteredJobs || filteredJobs.length === 0) {
+      if (!list || list.length === 0) {
         tbody.innerHTML = `
           <tr>
             <td colspan="7" style="padding: 32px; text-align: center; color: var(--text-muted);">
               <div style="font-size: 1.5rem; margin-bottom: 8px;">📋</div>
-              <strong>No regular Slurm jobs found for ${escapeHtml(currentUser || "current user")}.</strong>
-              <p style="margin-top: 4px; font-size: 0.85rem;">Click "Submit Regular Slurm Job" above to launch a batch script.</p>
+              <strong>No regular Slurm jobs found matching criteria.</strong>
+              <p style="margin-top: 4px; font-size: 0.85rem;">Try adjusting the filter or search query, or click "Submit Regular Slurm Job" above to launch a new job.</p>
             </td>
           </tr>
         `;
         return;
       }
 
-      tbody.innerHTML = filteredJobs.map(j => {
+      tbody.innerHTML = list.map(j => {
         const state = (j.state || "UNKNOWN").toUpperCase();
         const isCancellable = ["PENDING", "RUNNING", "SUSPENDED", "CONFIGURING"].includes(state);
 
