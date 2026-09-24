@@ -14,5 +14,9 @@
     "chunyu@jlab.org": {
         "account": "chunyu",
         "mcp": true
-    }
+    },
+    "nsato@jlab.org": {
+        "account": "nsato",
+        "mcp": true
+    }    
 }
