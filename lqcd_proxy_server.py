@@ -14,7 +14,7 @@ import sys
 from fastapi.security import HTTPBearer
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, HTMLResponse
 from fastmcp import FastMCP, Context
 from fastmcp.utilities.logging import configure_logging as fastmcp_configure_logging
 from fastmcp.server.middleware import MiddlewareContext
@@ -265,8 +265,27 @@ if lqcd_mcp_settings.is_fastmcp_version_3 == False:
     lqcd_mcp_main._list_tools = filtered_list_tools
 
 # Include the Slurm MCP Web Dashboard router before mounting /jlab
-from dashboard_router import dashboard_router
+from dashboard_router import dashboard_router, STATIC_GUIDE_HTML_PATH
 proxy_app.include_router(dashboard_router)
+
+
+@proxy_app.get("/guide", response_class=HTMLResponse)
+@proxy_app.get("/guide.html", response_class=HTMLResponse)
+@proxy_app.get("/help", response_class=HTMLResponse)
+@proxy_app.get("/help.html", response_class=HTMLResponse)
+@proxy_app.get("/howto", response_class=HTMLResponse)
+@proxy_app.get("/howto.html", response_class=HTMLResponse)
+async def proxy_serve_guide_page(request: Request):
+    """Serve user documentation guide HTML."""
+    if not os.path.isfile(STATIC_GUIDE_HTML_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Guide static asset not found at {STATIC_GUIDE_HTML_PATH}",
+        )
+    with open(STATIC_GUIDE_HTML_PATH, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
+
 
 # Mount the main mcp server
 # Something needs to be decided on the path

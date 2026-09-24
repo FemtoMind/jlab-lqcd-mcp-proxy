@@ -21,6 +21,9 @@ dashboard_router = APIRouter(prefix="/jlab/lqcd/mcp/dashboard", tags=["Slurm MCP
 STATIC_INDEX_HTML_PATH = os.path.join(
     os.path.dirname(__file__), "static", "slurm_dashboard", "index.html"
 )
+STATIC_GUIDE_HTML_PATH = os.path.join(
+    os.path.dirname(__file__), "static", "slurm_dashboard", "guide.html"
+)
 
 
 async def get_user_slurm_project_details(user: str) -> dict[str, Any]:
@@ -103,6 +106,24 @@ async def serve_dashboard_page(request: Request):
             detail=f"Dashboard static asset not found at {STATIC_INDEX_HTML_PATH}",
         )
     with open(STATIC_INDEX_HTML_PATH, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
+
+
+@dashboard_router.get("/guide", response_class=HTMLResponse)
+@dashboard_router.get("/guide.html", response_class=HTMLResponse)
+@dashboard_router.get("/help", response_class=HTMLResponse)
+@dashboard_router.get("/help.html", response_class=HTMLResponse)
+@dashboard_router.get("/howto", response_class=HTMLResponse)
+@dashboard_router.get("/howto.html", response_class=HTMLResponse)
+async def serve_guide_page(request: Request):
+    """Serve the documentation guide HTML."""
+    if not os.path.isfile(STATIC_GUIDE_HTML_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Guide static asset not found at {STATIC_GUIDE_HTML_PATH}",
+        )
+    with open(STATIC_GUIDE_HTML_PATH, "r", encoding="utf-8") as f:
         html_content = f.read()
     return HTMLResponse(content=html_content)
 
