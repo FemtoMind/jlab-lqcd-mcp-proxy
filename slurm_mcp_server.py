@@ -13,6 +13,7 @@
 import argparse
 import base64
 import glob
+import shlex
 import subprocess
 import asyncio
 import json
@@ -273,9 +274,86 @@ class SlurmMcpServers:
 
 # Class handling slurm related tasks
 # Some of the code taken from Jupyterhub slurm spawner
-import os
-import subprocess
 from string import Template
+
+
+class SlurmCommandError(RuntimeError):
+    """Raised when an external Slurm/subprocess command fails."""
+
+    def __init__(self, cmd, returncode=None, stdout=None, stderr=None):
+        self.cmd = cmd
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        super().__init__(f"Slurm command failed: {cmd} (rc={returncode})")
+
+
+async def run_slurm_command(
+    cmd: list[str] | str,
+    timeout: float = 30.0,
+    stdin: str | None = None,
+    cwd: str | None = None,
+) -> str:
+    """Run an external command asynchronously and return its stdout.
+
+    Raises SlurmCommandError if the command fails or times out.
+    """
+    if isinstance(cmd, str):
+        cmd_list = shlex.split(cmd)
+        cmd_str = cmd
+    else:
+        cmd_list = cmd
+        cmd_str = " ".join(cmd)
+
+    lqcd_logger.debug("Executing command: %s", cmd_str)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd_list,
+            stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        try:
+            stdin_bytes = stdin.encode("utf-8") if stdin is not None else None
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=stdin_bytes), timeout=timeout
+            )
+        except asyncio.TimeoutError as e:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
+            lqcd_logger.error("Command timed out after %s seconds: %s", timeout, cmd_str)
+            raise SlurmCommandError(
+                cmd=cmd_str,
+                returncode=-1,
+                stdout="",
+                stderr=f"Timeout expired: {e}",
+            ) from e
+
+        stdout_str = stdout.decode("utf-8", errors="replace")
+        stderr_str = stderr.decode("utf-8", errors="replace")
+
+        if proc.returncode != 0:
+            raise SlurmCommandError(
+                cmd=cmd_str,
+                returncode=proc.returncode,
+                stdout=stdout_str,
+                stderr=stderr_str,
+            )
+        return stdout_str
+    except Exception as e:
+        if not isinstance(e, SlurmCommandError):
+            lqcd_logger.exception("Failed to execute command: %s", cmd_str)
+            raise SlurmCommandError(
+                cmd=cmd_str,
+                returncode=-1,
+                stdout="",
+                stderr=str(e),
+            ) from e
+        raise e
 
 
 class SlurmSpawner:
@@ -298,7 +376,6 @@ class SlurmSpawner:
 
     async def get_slurm_info(self) -> cdata.FullSystemResource:
         """Get slurm computing resources."""
-        # Use subprocess to get system information
         jlab_commmand = (
             "sinfo --format='%8P %20N %20G %4c %16m %20F %16L %16l' -p 24s,21g -h"
         )
@@ -313,63 +390,53 @@ class SlurmSpawner:
             if _jlab_slurm == False:
                 command = local_commmand
 
-            result = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=True,
-            )
+            stdout_str = await run_slurm_command(command)
 
             # keep track of cluster name
             cluster_name = ""
-            # Read the output line by line
-            if result.stdout is not None:
-                for line in result.stdout:
-                    tokens = line.strip().split()
-                    cluster_name = tokens[0]
-                    # remove characters like ''' and '*' from the name
-                    cluster_name = cluster_name.replace("'", "").replace("*", "")
-                    gres = tokens[2]
-                    num_cores = int(tokens[3])
-                    memory = int(tokens[4]) / 1000  # Convert MB to GB
-                    node_info = tokens[5].split("/")
-                    total_num_nodes = int(node_info[3])
-                    free_num_nodes = int(node_info[1])
-                    used_num_nodes = int(node_info[0])
-                    other_num_nodes = int(node_info[2])
-                    default_wall_time = tokens[6]
-                    wall_time_limit = tokens[7]
+            for line in stdout_str.splitlines():
+                if not line.strip():
+                    continue
+                tokens = line.strip().split()
+                if not tokens:
+                    continue
+                cluster_name = tokens[0]
+                # remove characters like ''' and '*' from the name
+                cluster_name = cluster_name.replace("'", "").replace("*", "")
+                gres = tokens[2]
+                num_cores = int(tokens[3])
+                memory = int(tokens[4]) / 1000  # Convert MB to GB
+                node_info = tokens[5].split("/")
+                total_num_nodes = int(node_info[3])
+                free_num_nodes = int(node_info[1])
+                used_num_nodes = int(node_info[0])
+                other_num_nodes = int(node_info[2])
+                default_wall_time = tokens[6]
+                wall_time_limit = tokens[7]
 
-                    if gres.find("null") != -1:
-                        gres = ""
+                if gres.find("null") != -1:
+                    gres = ""
 
-                    if gres.find("gpu") != -1:
-                        cluster_type = "GPU"
-                    else:
-                        cluster_type = "CPU"
+                if gres.find("gpu") != -1:
+                    cluster_type = "GPU"
+                else:
+                    cluster_type = "CPU"
 
-                    partition_info = cdata.FullSystemResource._partition_resource(
-                        partition_name=cluster_name,
-                        type=cluster_type,
-                        num_nodes=total_num_nodes,
-                        num_free_nodes=free_num_nodes,
-                        num_busy_nodes=used_num_nodes,
-                        num_other_nodes=other_num_nodes,
-                        num_cpus_per_node=num_cores,
-                        memory_per_node_gb=memory,
-                        generic_resource=gres,
-                        default_wall_time=default_wall_time,
-                        wall_time_limit=wall_time_limit,
-                    )
+                partition_info = cdata.FullSystemResource._partition_resource(
+                    partition_name=cluster_name,
+                    type=cluster_type,
+                    num_nodes=total_num_nodes,
+                    num_free_nodes=free_num_nodes,
+                    num_busy_nodes=used_num_nodes,
+                    num_other_nodes=other_num_nodes,
+                    num_cpus_per_node=num_cores,
+                    memory_per_node_gb=memory,
+                    generic_resource=gres,
+                    default_wall_time=default_wall_time,
+                    wall_time_limit=wall_time_limit,
+                )
 
-                    system_info.partitions.append(partition_info)
-            else:
-                lqcd_logger.error("No slurm partitions found.")
-                raise Exception("No slurm partitions found.")
-
-            # Wait for the process to complete
-            result.wait()
+                system_info.partitions.append(partition_info)
         except Exception as e:
             lqcd_logger.error(f"Failed to get slurm system information: {e}")
 
@@ -388,22 +455,12 @@ class SlurmSpawner:
         command = ["sacctmgr", "show", "associations", "where", userarg, "-n"]
 
         try:
-            result = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
+            stdout_str = await run_slurm_command(command)
             accounts = []
-
-            # read line one after another
-            if result.stdout:
-                for line in result.stdout:
-                    tokens = line.strip().split()
+            for line in stdout_str.splitlines():
+                tokens = line.strip().split()
+                if len(tokens) >= 2:
                     accounts.append(tokens[1])
-            else:
-                lqcd_logger.error("No slurm accounts found.")
-                raise Exception("No slurm accounts found.")
-
-            # Wait for the process to finish
-            result.wait()
         except Exception as e:
             lqcd_logger.error(f"Failed to get slurm account information: {e}")
             return None
@@ -413,24 +470,13 @@ class SlurmSpawner:
     # Get slurm job information by job id
     async def get_slurm_job_info(self, job_id: str) -> cdata.SlurmJobInfo | None:
         """Get slurm job information."""
-        # Build a shell command to get slurm job information
-        # make sure to use shell=True
-        command = "squeue --job=" + job_id + " --format='%j %T %N %S %l' -h"
+        command = ["squeue", f"--job={job_id}", "--format=%j %T %N %S %l", "-h"]
         try:
-            result = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=True,
-            )
-
-            if result.stdout is None:
+            stdout_str = await run_slurm_command(command)
+            job_info = stdout_str.strip().split()
+            if not job_info:
                 lqcd_logger.error(f"No slurm job information found for job id: {job_id}")
                 raise Exception(f"No slurm job information found for job id: {job_id}")
-
-            job_info = result.stdout.read().strip().split()
-            result.wait()
         except Exception as e:
             lqcd_logger.error(f"Failed to get slurm job information: {e}")
             return None
@@ -457,37 +503,32 @@ class SlurmSpawner:
                 job_nodes="",
             )
         else:
-            sacct_command = (
-                "sacct --job="
-                + job_id
-                + " --format='State,NodeList,jobname,Start,End' -n"
-            )
-            result = subprocess.Popen(
-                sacct_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=True,
-            )
+            sacct_command = [
+                "sacct",
+                f"--job={job_id}",
+                "--format=State,NodeList,jobname,Start,End",
+                "-n",
+            ]
+            try:
+                sacct_stdout = await run_slurm_command(sacct_command)
+                job_info_lines = sacct_stdout.splitlines()
+                if not job_info_lines:
+                    lqcd_logger.error(f"No slurm job information found for job id: {job_id}")
+                    raise Exception(f"No slurm job information found for job id: {job_id}")
 
-            if result.stdout is None:
-                lqcd_logger.error(f"No slurm job information found for job id: {job_id}")
-                raise Exception(f"No slurm job information found for job id: {job_id}")
+                job_info = job_info_lines[0].split(",")
 
-            job_info_lines = result.stdout.read().splitlines()
-            # deal with the first line
-            job_info = job_info_lines[0].split(",")
-
-            result.wait()
-
-            sjob = cdata.SlurmJobInfo(
-                job_id=int(job_id),
-                job_name=job_info[2],
-                job_state=job_info[0],
-                job_start_time=job_info[3],
-                job_wall_or_end_time=job_info[4],
-                job_nodes=job_info[1],
-            )
+                sjob = cdata.SlurmJobInfo(
+                    job_id=int(job_id),
+                    job_name=job_info[2],
+                    job_state=job_info[0],
+                    job_start_time=job_info[3],
+                    job_wall_or_end_time=job_info[4],
+                    job_nodes=job_info[1],
+                )
+            except Exception as e:
+                lqcd_logger.error(f"Failed to get slurm job information from sacct: {e}")
+                return None
         return sjob
 
     # Scan states of a list of jobs
@@ -500,31 +541,14 @@ class SlurmSpawner:
 
         job_ids = [server.slurm_job_id for server in slurm_servers]
         job_ids_str = ",".join(map(str, job_ids))
-        command = "squeue --jobs=" + job_ids_str + " --format='%A %T' -h"
+        command = ["squeue", f"--jobs={job_ids_str}", "--format=%A %T", "-h"]
+        job_states: dict[int, str] = {}
         try:
-            result = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=True,
-            )
-            # read line one after another
-            job_states: dict[int, str] = {}
-            if result.stdout is None:
-                lqcd_logger.error(
-                    f"Failed to get slurm job information for job ids: {job_ids_str}"
-                )
-                raise Exception(
-                    f"Failed to get slurm job information for job ids: {job_ids_str}"
-                )
-
-            for line in result.stdout:
-                tokens = line.strip().split()   
+            stdout_str = await run_slurm_command(command)
+            for line in stdout_str.splitlines():
+                tokens = line.strip().split()
                 if len(tokens) == 2:
                     job_states[int(tokens[0])] = tokens[1]
-            # wait for the process to complete
-            result.wait()
         except Exception as e:
             lqcd_logger.error(f"Failed to check slurm jobs: {e}")
 
@@ -564,33 +588,23 @@ class SlurmSpawner:
     async def check_slurm_job_state(self, job_id: str) -> str | None:
         """Check the status of a slurm job."""
         try:
-            result = subprocess.Popen(
-                ["squeue", "--job=" + str(job_id), "--format=%T", "-h"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            stdout_str = await run_slurm_command(
+                ["squeue", f"--job={job_id}", "--format=%T", "-h"]
             )
-            result.wait()
-            if result.stdout is not None:
-                job_state = result.stdout.read().strip()
-                if job_state:
-                    return job_state
+            job_state = stdout_str.strip()
+            if job_state:
+                return job_state
 
             # If not in active queue, check sacct for terminal state (FAILED, COMPLETED, CANCELLED, TIMEOUT, etc.)
-            sacct_res = subprocess.Popen(
-                ["sacct", "--job=" + str(job_id), "--format=State", "-n", "-P"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            sacct_res = await run_slurm_command(
+                ["sacct", f"--job={job_id}", "--format=State", "-n", "-P"]
             )
-            sacct_res.wait()
-            if sacct_res.stdout is not None:
-                lines = sacct_res.stdout.read().splitlines()
-                if lines:
-                    first_line = lines[0].strip().split()[0]
-                    term_state = first_line.replace("+", "")
-                    if term_state:
-                        return term_state
+            lines = sacct_res.splitlines()
+            if lines:
+                first_line = lines[0].strip().split()[0]
+                term_state = first_line.replace("+", "")
+                if term_state:
+                    return term_state
         except Exception as e:
             lqcd_logger.error(f"Failed to check slurm job {job_id}: {e}")
             return None
@@ -606,53 +620,23 @@ class SlurmSpawner:
         )
 
         try:
-            result = subprocess.Popen(
-                ["scancel", job_id],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            result.wait()
-
-            if result.returncode != 0:
-                if result.stderr is None:
-                    lqcd_logger.error(
-                        f"Failed to cancel slurm job for job id: {job_id}"
-                    )
-                    raise Exception(
-                        f"Failed to cancel slurm job for job id: {job_id}"
-                    )
-
-                lqcd_logger.warning(
-                    "Failed to stop slurm job: {}".format(result.stderr.read())
-                )
-                ret_status.status = cdata.SlurmJobCancelStatus._status_value.UNKNOWN
-                ret_status.error_message = "Failed to stop slurm job: {}".format(
-                    result.stderr.read()
-                )
+            stdout_str = await run_slurm_command(["scancel", str(job_id)])
+            lqcd_logger.info(f"Successfully executed scancel command for job: {job_id}")
+            output = stdout_str.strip()
+            if output not in (None, ""):  # scancel return nothing if success
+                lqcd_logger.warning("Failed to stop slurm job: {}".format(output))
+                ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
+                ret_status.error_message = "Failed to stop slurm job: {}".format(output)
                 return ret_status
-            else:
-                lqcd_logger.info(
-                    f"Successfully executed scancel command for job: {job_id}"
-                )
-
-                if result.stdout is None:
-                    lqcd_logger.error(
-                        f"Failed to get slurm job information for job id: {job_id}"
-                    )
-                    raise Exception(
-                        f"Failed to get slurm job information for job id: {job_id}"
-                    )
-
-                output = result.stdout.read().strip()
-                if output not in (None, ""):  # scancel return nothing if success
-                    lqcd_logger.warning("Failed to stop slurm job: {}".format(output))
-                    ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
-                    ret_status.error_message = "Failed to stop slurm job: {}".format(
-                        output
-                    )
-                    return ret_status
-
+        except SlurmCommandError as e:
+            lqcd_logger.warning(
+                "Failed to stop slurm job: {}".format(e.stderr or str(e))
+            )
+            ret_status.status = cdata.SlurmJobCancelStatus._status_value.UNKNOWN
+            ret_status.error_message = "Failed to stop slurm job: {}".format(
+                e.stderr or str(e)
+            )
+            return ret_status
         except Exception as e:
             lqcd_logger.error(f"Failed to execute scancel command: {e}")
             ret_status.status = cdata.SlurmJobCancelStatus._status_value.FAILED
@@ -790,17 +774,12 @@ $cmd
             )
         # Now submit job
         try:
-            pipe = subprocess.Popen(
+            output = await run_slurm_command(
                 cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdin=job_script,
                 cwd=working_dir,
             )
-            output = pipe.communicate(input=job_script.encode())[0].strip()
-            output = output.decode()
-            pipe.wait()
-
+            output = output.strip()
         except Exception as e:
             lqcd_logger.error(f"Failed to submit slurm job: {e}")
             raise e
@@ -849,15 +828,9 @@ $cmd
                 "--format=%i|%j|%T|%M|%l|%P|%D|%R|%Z",
                 "-h",
             ]
-            proc = subprocess.Popen(
-                cmd_squeue,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            proc.wait()
-            if proc.stdout:
-                for line in proc.stdout:
+            try:
+                stdout_squeue = await run_slurm_command(cmd_squeue)
+                for line in stdout_squeue.splitlines():
                     line = line.strip()
                     if not line:
                         continue
@@ -880,6 +853,8 @@ $cmd
                             "work_dir": parts[8].strip() if len(parts) > 8 else "",
                             "is_active": True,
                         }
+            except Exception as e:
+                lqcd_logger.debug(f"Could not query squeue for {user}: {e}")
 
             # 2. Query recently completed/failed/cancelled jobs from sacct
             cmd_sacct = [
@@ -892,15 +867,9 @@ $cmd
                 "-S",
                 "now-24hours",
             ]
-            proc_sacct = subprocess.Popen(
-                cmd_sacct,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            proc_sacct.wait()
-            if proc_sacct.stdout:
-                for line in proc_sacct.stdout:
+            try:
+                stdout_sacct = await run_slurm_command(cmd_sacct)
+                for line in stdout_sacct.splitlines():
                     line = line.strip()
                     if not line:
                         continue
@@ -939,6 +908,8 @@ $cmd
                                 if len(parts) > 9
                                 else "",
                             }
+            except Exception as e:
+                lqcd_logger.debug(f"Could not query sacct for {user}: {e}")
         except Exception as e:
             lqcd_logger.error(
                 f"Error querying regular slurm jobs for {user}: {e}"
@@ -974,22 +945,17 @@ $cmd
         patterns = [p for p in patterns if p]
 
         try:
-            proc = subprocess.Popen(
-                ["scontrol", "show", "job", job_id_str],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            scontrol_out = await run_slurm_command(
+                ["scontrol", "show", "job", job_id_str]
             )
-            proc.wait()
-            if proc.stdout:
-                for line in proc.stdout:
-                    for token in line.split():
-                        if token.startswith("StdOut=") or token.startswith(
-                            "StdErr="
-                        ):
-                            path = token.split("=", 1)[1].strip()
-                            if path and path not in patterns:
-                                patterns.insert(0, path)
+            for line in scontrol_out.splitlines():
+                for token in line.split():
+                    if token.startswith("StdOut=") or token.startswith(
+                        "StdErr="
+                    ):
+                        path = token.split("=", 1)[1].strip()
+                        if path and path not in patterns:
+                            patterns.insert(0, path)
         except Exception as e:
             lqcd_logger.debug(
                 f"Could not query scontrol for job {job_id_str}: {e}"
