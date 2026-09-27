@@ -170,7 +170,7 @@ def validate_globus_rs_token(token: str) -> tuple[bool, dict | None]:
                 "email": user_identity if "@" in user_identity else None,
                 "sub": introspect.get("sub"),
                 "preferred_username": user_identity,
-                "globus_introspect": introspect,
+                "globus_introspect": getattr(introspect, "data", introspect),
             }
             lqcd_logger.info(f"Globus RS Token is valid for identity: {user_identity}")
             return True, user_info
@@ -249,6 +249,17 @@ def validate_authorized_token(token: str):
         return False, None
 
 
+def _as_dict(val: Any) -> dict:
+    """Safely extracts a dictionary from a dict or an object with a .data attribute (like GlobusHTTPResponse)."""
+    if isinstance(val, dict):
+        return val
+    if hasattr(val, "data"):
+        data = getattr(val, "data")
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
 def map_user_info_to_account(user_info: dict) -> str | None:
     """
     Maps user identity info (from OIDC UserInfo or Globus introspection) to a local Linux account.
@@ -265,23 +276,22 @@ def map_user_info_to_account(user_info: dict) -> str | None:
         add_candidate(user_info.get(key))
 
     # 2. Add all linked identities and session authentications from Globus introspection
-    introspect = user_info.get("globus_introspect") if "globus_introspect" in user_info else user_info
-    if isinstance(introspect, dict):
-        session_info = introspect.get("session_info")
-        if isinstance(session_info, dict):
-            authentications = session_info.get("authentications")
-            if isinstance(authentications, dict):
-                for auth_detail in authentications.values():
-                    if isinstance(auth_detail, dict):
-                        for key in ("username", "email", "sub"):
-                            add_candidate(auth_detail.get(key))
+    introspect_raw = user_info.get("globus_introspect", user_info)
+    introspect = _as_dict(introspect_raw)
 
-        identity_set_detail = introspect.get("identity_set_detail")
-        if isinstance(identity_set_detail, list):
-            for item in identity_set_detail:
-                if isinstance(item, dict):
-                    for key in ("username", "email", "sub"):
-                        add_candidate(item.get(key))
+    session_info = _as_dict(introspect.get("session_info"))
+    authentications = _as_dict(session_info.get("authentications"))
+    for auth_detail in authentications.values():
+        if isinstance(auth_detail, dict):
+            for key in ("username", "email", "sub"):
+                add_candidate(auth_detail.get(key))
+
+    identity_set_detail = introspect.get("identity_set_detail")
+    if isinstance(identity_set_detail, list):
+        for item in identity_set_detail:
+            if isinstance(item, dict):
+                for key in ("username", "email", "sub"):
+                    add_candidate(item.get(key))
 
     # 3. Check each candidate key against the mapping file
     for key in candidate_keys:
