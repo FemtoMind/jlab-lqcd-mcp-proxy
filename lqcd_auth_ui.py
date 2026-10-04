@@ -173,6 +173,7 @@ async def do_login(proxy_url: str, verify_ssl: bool) -> str:
                 f"&response_type=code"
                 f"&code_challenge={code_challenge}"
                 f"&code_challenge_method=S256"
+                f"&prompt=login"
             )
             
             panel = Panel(
@@ -319,8 +320,44 @@ def cache_token_info(token: str, info: dict):
         if v.get("exp", 0) == 0 or v.get("exp", 0) > now:
             cleaned_cache[k] = v
             
+    info["token"] = token
     cleaned_cache[token_hash] = info
     save_token_cache(cleaned_cache)
+
+
+def find_valid_cached_token(min_remaining_seconds: int = 300) -> tuple[str | None, dict | None]:
+    now = time.time()
+
+    # 1. Check ~/.globus/auth_tokens.json (from get_globus_token.py)
+    globus_token_path = os.path.expanduser("~/.globus/auth_tokens.json")
+    if os.path.exists(globus_token_path):
+        try:
+            with open(globus_token_path, "r") as f:
+                data = json.load(f)
+            # Find any valid token inside
+            for key, val in data.items():
+                if isinstance(val, dict):
+                    tok = val.get("access_token")
+                    exp = val.get("expires_at_seconds") or val.get("exp")
+                    if tok and exp and (exp - now) > min_remaining_seconds:
+                        return tok, {"exp": exp, "scope": val.get("scope", ""), "source": "~/.globus/auth_tokens.json"}
+                elif isinstance(val, str) and key == "access_token":
+                    exp = data.get("expires_at_seconds") or data.get("exp")
+                    if exp and (exp - now) > min_remaining_seconds:
+                        return val, {"exp": exp, "source": "~/.globus/auth_tokens.json"}
+        except Exception:
+            pass
+
+    # 2. Check ~/.lqcd_token_cache.json
+    cache = load_token_cache()
+    for token_hash, info in cache.items():
+        if isinstance(info, dict):
+            exp = info.get("exp")
+            tok = info.get("token")
+            if tok and exp and (exp - now) > min_remaining_seconds:
+                return tok, info
+
+    return None, None
 
 
 def get_token_info(token: str) -> dict | None:
@@ -670,6 +707,17 @@ async def main():
         help="Show the authentication token after login (not recommended for shared environments)",
     )
     parser.add_argument(
+        "--force-login",
+        action="store_true",
+        help="Force a new interactive login even if a valid cached token is available",
+    )
+    parser.add_argument(
+        "--min-validity",
+        type=int,
+        default=300,
+        help="Minimum remaining validity in seconds required to reuse a cached token (default: 300)",
+    )
+    parser.add_argument(
         "--token",
         type=str,
         default="",
@@ -696,10 +744,24 @@ async def main():
     # Strip trailing slash
     proxy_url = proxy_url.rstrip("/")
 
-    # Check command-line flag or environment variable for manual token override
+    # 1. Check command-line flag or environment variable for manual token override
     token = args.token or os.getenv("LQCDMCP_TOKEN", "")
+
+    # 2. If no manual token and not forcing login, check for a valid cached token with enough lifetime left
+    if not token and not args.force_login:
+        cached_tok, cached_meta = find_valid_cached_token(args.min_validity)
+        if cached_tok:
+            exp = cached_meta.get("exp") if cached_meta else None
+            time_left = exp - time.time() if exp else 0
+            src = cached_meta.get("source", "local cache") if cached_meta else "local cache"
+            console.print(
+                f"[bold green]✅ Found valid token in {src} ({format_duration(time_left)} remaining). Reusing without re-authenticating...[/bold green]"
+            )
+            console.print("[dim](Use --force-login to force a fresh browser login)[/dim]")
+            token = cached_tok
+
     if token:
-        console.print("[bold green]Using manually provided token. Skipping login flow...[/bold green]")
+        pass
     else:
         console.print("\n[bold cyan]Select Authentication Method:[/bold cyan]")
         console.print("  [green]1)[/green] Globus / OIDC (automatic browser login)")
