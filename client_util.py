@@ -302,6 +302,7 @@ class LQCDMCPClient:
                     f"&response_type=code"
                     f"&code_challenge={code_challenge}"
                     f"&code_challenge_method=S256"
+                    f"&prompt=login"
                 )
 
                 print(f"\n1. Open your browser to: {auth_url}")
