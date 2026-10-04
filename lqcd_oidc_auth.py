@@ -142,7 +142,8 @@ def validate_globus_rs_token(token: str) -> tuple[bool, dict | None]:
             return False, {"message": "Globus RS token has expired"}
 
         nbf = introspect.get("nbf")
-        if nbf and time.time() < nbf:
+        # Allow 60 seconds leeway for clock skew between servers
+        if nbf and (time.time() + 60) < nbf:
             lqcd_logger.warning("Globus RS token not yet valid")
             return False, {"message": "Globus RS token not yet valid"}
 
