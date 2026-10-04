@@ -1163,6 +1163,12 @@
           <div style="font-size: 0.88rem; color: var(--text-dim);">
             Click below to initiate login via Globus Auth. You will be prompted to authenticate with your institutional account.
           </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.84rem; padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+            <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-color); margin: 0;">
+              <input type="checkbox" id="chk-force-login" checked /> Force fresh login (<code style="font-size: 0.75rem;">prompt=login</code>)
+            </label>
+            <span id="globus-token-status-hint" style="color: #10b981; font-size: 0.8rem; display: none;"></span>
+          </div>
           <button class="btn btn-primary" id="btn-start-globus" onclick="startGlobusAuthFlow()" style="justify-content: center;">
             🚀 Open Globus Login Window
           </button>
@@ -1484,8 +1490,9 @@
       if (tokenParam) {
         authToken = tokenParam;
         sessionStorage.setItem("mcp_dashboard_token", tokenParam);
+        localStorage.setItem("mcp_dashboard_token", tokenParam);
       } else {
-        authToken = sessionStorage.getItem("mcp_dashboard_token") || "";
+        authToken = sessionStorage.getItem("mcp_dashboard_token") || localStorage.getItem("mcp_dashboard_token") || "";
       }
 
       // 2. Fetch Initial Status & Data
@@ -2297,7 +2304,33 @@ python3 /path/to/my_mcp_server.py
       const userStatusEl = document.getElementById("auth-current-status");
       const modalUserEl = document.getElementById("auth-modal-user");
       const copyBtn = document.getElementById("auth-modal-copy-tokens-btn");
-      const hasTokenBundle = !!sessionStorage.getItem("mcp_token_bundle");
+      const hasTokenBundle = !!(sessionStorage.getItem("mcp_token_bundle") || localStorage.getItem("mcp_token_bundle"));
+
+      // Check if current cached token has enough valid time remaining
+      const rawStr = sessionStorage.getItem("mcp_token_bundle") || localStorage.getItem("mcp_token_bundle");
+      const hintEl = document.getElementById("globus-token-status-hint");
+      const chkEl = document.getElementById("chk-force-login");
+      if (hintEl && chkEl) {
+        let validRemaining = 0;
+        if (rawStr) {
+          try {
+            const b = JSON.parse(rawStr);
+            const exp = b.expires_at || b.exp || (b.expires_in ? Math.floor(Date.now() / 1000) + b.expires_in : null);
+            if (exp) {
+              validRemaining = exp - Math.floor(Date.now() / 1000);
+            }
+          } catch (e) {}
+        }
+        if (validRemaining > 300) {
+          const mins = Math.floor(validRemaining / 60);
+          hintEl.style.display = "inline";
+          hintEl.textContent = `Valid token active (~${mins}m left)`;
+          chkEl.checked = false; // Don't force prompt=login if token is fresh
+        } else {
+          hintEl.style.display = "none";
+          chkEl.checked = true; // Force fresh login if token is expired or about to expire
+        }
+      }
 
       if (currentUser && currentUser !== "unknown") {
         modalUserEl.textContent = currentUser;
@@ -2374,7 +2407,12 @@ python3 /path/to/my_mcp_server.py
           const codeChallenge = await generateCodeChallenge(codeVerifier);
           sessionStorage.setItem("pkce_code_verifier", codeVerifier);
 
-          const authUrl = `${authInfoCache.authorization_url}?client_id=${encodeURIComponent(authInfoCache.client_id)}&redirect_uri=${encodeURIComponent(authInfoCache.redirect_uri)}&scope=${encodeURIComponent(authInfoCache.scope)}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+          const chkForce = document.getElementById("chk-force-login");
+          const forcePrompt = chkForce ? chkForce.checked : true;
+          let authUrl = `${authInfoCache.authorization_url}?client_id=${encodeURIComponent(authInfoCache.client_id)}&redirect_uri=${encodeURIComponent(authInfoCache.redirect_uri)}&scope=${encodeURIComponent(authInfoCache.scope)}&response_type=code&code_challenge=${codeChallenge}&code_challenge_method=S256`;
+          if (forcePrompt) {
+            authUrl += "&prompt=login";
+          }
 
           window.open(authUrl, "_blank");
           document.getElementById("globus-code-exchange-panel").style.display = "flex";
@@ -2460,10 +2498,13 @@ python3 /path/to/my_mcp_server.py
     function setAuthenticatedToken(token, rawData) {
       authToken = token;
       sessionStorage.setItem("mcp_dashboard_token", token);
+      localStorage.setItem("mcp_dashboard_token", token);
       if (rawData && typeof rawData === "object") {
         sessionStorage.setItem("mcp_token_bundle", JSON.stringify(rawData));
+        localStorage.setItem("mcp_token_bundle", JSON.stringify(rawData));
       } else {
         sessionStorage.removeItem("mcp_token_bundle");
+        localStorage.removeItem("mcp_token_bundle");
       }
       closeModal("modal-auth");
       startAutoRefresh();
@@ -2475,6 +2516,8 @@ python3 /path/to/my_mcp_server.py
       currentUser = "";
       sessionStorage.removeItem("mcp_dashboard_token");
       sessionStorage.removeItem("mcp_token_bundle");
+      localStorage.removeItem("mcp_dashboard_token");
+      localStorage.removeItem("mcp_token_bundle");
       closeModal("modal-auth");
       closeModal("modal-view-tokens");
       document.getElementById("user-name").textContent = "Not Authenticated";
