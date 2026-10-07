@@ -18,5 +18,9 @@
     "nsato@jlab.org": {
         "account": "nsato",
         "mcp": true
-    }    
+    },
+    "treyand@jlab.org": {
+        "account": "treyand",
+        "mcp": true
+    }
 }
