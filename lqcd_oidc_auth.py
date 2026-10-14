@@ -42,6 +42,18 @@ def read_oidc_auth_info():
         __auth_info = None
         return
 
+    # Allow environment variables to populate or override missing credentials
+    if not auth_info.get("client_id") and os.getenv("GLOBUS_CLIENT_ID"):
+        auth_info["client_id"] = os.getenv("GLOBUS_CLIENT_ID")
+    if not auth_info.get("globus_rs_id") and os.getenv("GLOBUS_RS_ID"):
+        auth_info["globus_rs_id"] = os.getenv("GLOBUS_RS_ID")
+    if not auth_info.get("globus_rs_secret") and os.getenv("GLOBUS_RS_SECRET"):
+        auth_info["globus_rs_secret"] = os.getenv("GLOBUS_RS_SECRET")
+
+    # If scope contains {GLOBUS_RS_ID}, substitute with actual globus_rs_id
+    if auth_info.get("globus_rs_id") and "{GLOBUS_RS_ID}" in auth_info.get("scope", ""):
+        auth_info["scope"] = auth_info["scope"].replace("{GLOBUS_RS_ID}", auth_info["globus_rs_id"])
+
     try:
         info: OIDCAuthInfo = OIDCAuthInfo(**auth_info)
     except ValueError as e:
