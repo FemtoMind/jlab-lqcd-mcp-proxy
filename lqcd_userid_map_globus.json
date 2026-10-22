@@ -22,5 +22,9 @@
     "treyand@jlab.org": {
         "account": "treyand",
         "mcp": true
-    }
+    },
+    "fmringer@jlab.org": {
+        "account": "fmringer",
+        "mcp": true
+    }    
 }
